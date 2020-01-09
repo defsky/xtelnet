@@ -11,7 +11,7 @@ import (
 
 func main() {
 	app := tview.NewApplication()
-	screen := tview.NewTextView()
+	screen := tview.NewTextView().SetDynamicColors(true)
 
 	hostCell := tview.NewTableCell("No active connection").
 		SetMaxWidth(40).
@@ -31,19 +31,19 @@ func main() {
 		case tcell.KeyEnter:
 			msg, data, err := doCommand(inputBox.GetText())
 			inputBox.SetText("")
-			if len(msg) > 0 {
-				app.QueueUpdateDraw(func() {
-					fmt.Fprintln(screen, msg)
-				})
-			}
 			if err != nil {
 				app.QueueUpdateDraw(func() {
-					fmt.Fprintln(screen, err)
+					fmt.Fprintf(screen, "[red]%s\n", err)
+				})
+			}
+			if len(msg) > 0 {
+				app.QueueUpdateDraw(func() {
+					fmt.Fprintf(screen, "%s\n", msg)
 				})
 			}
 			if len(data) > 0 {
 				app.QueueUpdateDraw(func() {
-					fmt.Fprintln(screen, fmt.Sprintf("send data: %s", string(data)))
+					fmt.Fprintln(screen, fmt.Sprintf("send data: %v", data))
 				})
 			}
 		case tcell.KeyEsc:
@@ -66,11 +66,10 @@ func main() {
 }
 
 func doCommand(cmd string) (string, []byte, error) {
-	if cmd[0] != '/' {
-		return "", []byte(cmd), nil
+	if len(cmd) <= 0 || cmd[0] != '/' {
+		return "", []byte(cmd + "\r\n"), nil
 	}
-	cmdStr := strings.TrimRight(cmd[1:], "\r\n ")
-	rd := bufio.NewReader(strings.NewReader(cmdStr))
-
+	rd := bufio.NewReader(strings.NewReader(cmd[1:]))
+	rd.Peek(1)
 	return Shell.Exec(rd)
 }

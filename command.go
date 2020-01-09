@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -29,7 +30,7 @@ var Commands = CommandMap{
 		handler:    handleCmdOpen,
 		subCommand: nil,
 		desc:       "Open a connection",
-		help:       "Usage: /open <host> <port>",
+		help:       "\tUsage: /open <host> <port>",
 	},
 }
 
@@ -37,12 +38,12 @@ var Shell = &Command{
 	name:       "",
 	handler:    nil,
 	subCommand: Commands,
-	desc:       "Client Command",
+	desc:       "Available commands",
 }
 
 func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 	if p.Buffered() <= 0 {
-		return c.help, nil, nil
+		return c.help, nil, errors.New("need params: <host> <port>")
 	}
 
 	var host, port string
@@ -62,9 +63,16 @@ func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 	}
 
 	if len(port) == 0 {
-		return "", nil, errors.New("need port param")
+		return c.help, nil, errors.New("need param: <port>")
 	}
 
+	portNumber, err := strconv.Atoi(port)
+	if err != nil {
+		return "", nil, errors.New("port param must be a number")
+	}
+	if portNumber < 0 || portNumber > 65535 {
+		return "", nil, errors.New("port number must in range 1-65535")
+	}
 	// Todo: add operations to open connection to remote host
 	return fmt.Sprintf("connect to %s:%s ...", host, port), nil, nil
 }
@@ -87,15 +95,15 @@ func (c *Command) Exec(p *bufio.Reader) (string, []byte, error) {
 		if !ok {
 			return subCmdDesc(c), nil, errors.New(fmt.Sprintf("command not found: %s", cmdName))
 		}
-		subCmd.Exec(p)
+		return subCmd.Exec(p)
 	}
-	return fmt.Sprintf("bufferd size:%d", p.Buffered()), nil, nil
+	return subCmdDesc(c), nil, nil
 }
 
 func subCmdDesc(c *Command) string {
 	msg := c.desc + ":\n"
 	for k, v := range c.subCommand {
-		msg = msg + fmt.Sprintf("%-10s%-50s\n", k, v.desc)
+		msg = msg + fmt.Sprintf("\t%-10s%-50s\n", k, v.desc)
 	}
 	strings.TrimRight(msg, "\r\n ")
 	return msg
