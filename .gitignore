@@ -1,3 +1,4 @@
-gocui*
-telnet-client*
-mudclient
+telnet*
+tview*
+go-runewidth*
+xtelnet
