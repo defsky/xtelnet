@@ -3,8 +3,10 @@ module mudclient
 go 1.13
 
 require (
-	github.com/jroimartin/gocui v0.4.0
+	github.com/defsky/telnet v0.0.0-00010101000000-000000000000
+	github.com/gdamore/tcell v1.3.0
+	github.com/rivo/tview v0.0.0-20191231100700-c6236f442139
 	golang.org/x/text v0.3.2
 )
 
-replace github.com/jroimartin/gocui => ./gocui
+replace github.com/defsky/telnet => ./telnet

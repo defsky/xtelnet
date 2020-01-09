@@ -1,240 +1,76 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"log"
 	"strings"
 
-	"github.com/jroimartin/gocui"
+	"github.com/gdamore/tcell"
+	"github.com/rivo/tview"
 )
 
-func nextView(g *gocui.Gui, v *gocui.View) error {
-	if v == nil || v.Name() == "side" {
-		_, err := g.SetCurrentView("main")
-		return err
-	}
-
-	if v == nil || v.Name() == "main" {
-		_, err := g.SetCurrentView("input")
-		return err
-	}
-
-	_, err := g.SetCurrentView("side")
-
-	return err
-}
-
-func cursorDown(g *gocui.Gui, v *gocui.View) error {
-	if v != nil {
-		cx, cy := v.Cursor()
-		if err := v.SetCursor(cx, cy+1); err != nil {
-			ox, oy := v.Origin()
-			if err := v.SetOrigin(ox, oy+1); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func cursorUp(g *gocui.Gui, v *gocui.View) error {
-	if v != nil {
-		ox, oy := v.Origin()
-		cx, cy := v.Cursor()
-		if err := v.SetCursor(cx, cy-1); err != nil && oy > 0 {
-			if err := v.SetOrigin(ox, oy-1); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func getLine(g *gocui.Gui, v *gocui.View) error {
-	var l string
-	var err error
-
-	_, cy := v.Cursor()
-	if l, err = v.Line(cy); err != nil {
-		l = ""
-	}
-
-	maxX, maxY := g.Size()
-	if v, err := g.SetView("msg", maxX/2-30, maxY/2, maxX/2+30, maxY/2+2); err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		fmt.Fprintln(v, l)
-		if _, err := g.SetCurrentView("msg"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func delMsg(g *gocui.Gui, v *gocui.View) error {
-	if err := g.DeleteView("msg"); err != nil {
-		return err
-	}
-	if _, err := g.SetCurrentView("side"); err != nil {
-		return err
-	}
-	return nil
-}
-
-func quit(g *gocui.Gui, v *gocui.View) error {
-	return gocui.ErrQuit
-}
-
-func keybindings(g *gocui.Gui) error {
-	if err := g.SetKeybinding("side", gocui.KeyTab, gocui.ModNone, nextView); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding("main", gocui.KeyTab, gocui.ModNone, nextView); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding("input", gocui.KeyTab, gocui.ModNone, nextView); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding("side", gocui.KeyArrowDown, gocui.ModNone, cursorDown); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding("side", gocui.KeyArrowUp, gocui.ModNone, cursorUp); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding("side", gocui.KeyEnter, gocui.ModNone, getLine); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding("msg", gocui.KeyEnter, gocui.ModNone, delMsg); err != nil {
-		return err
-	}
-
-	if err := g.SetKeybinding("main", gocui.KeyCtrlS, gocui.ModNone, saveMain); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding("main", gocui.KeyCtrlW, gocui.ModNone, saveVisualMain); err != nil {
-		return err
-	}
-	return nil
-}
-
-func saveMain(g *gocui.Gui, v *gocui.View) error {
-	f, err := ioutil.TempFile("", "gocui_demo_")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	p := make([]byte, 5)
-	v.Rewind()
-	for {
-		n, err := v.Read(p)
-		if n > 0 {
-			if _, err := f.Write(p[:n]); err != nil {
-				return err
-			}
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func saveVisualMain(g *gocui.Gui, v *gocui.View) error {
-	f, err := ioutil.TempFile("", "gocui_demo_")
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	vb := v.ViewBuffer()
-	if _, err := io.Copy(f, strings.NewReader(vb)); err != nil {
-		return err
-	}
-	return nil
-}
-
-func layout(g *gocui.Gui) error {
-	maxX, maxY := g.Size()
-	if v, err := g.SetView("side", -1, -1, 30, maxY); err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		v.Highlight = true
-		v.SelBgColor = gocui.ColorGreen
-		v.SelFgColor = gocui.ColorBlack
-		fmt.Fprintln(v, "Item 1")
-		fmt.Fprintln(v, "Item 2")
-		fmt.Fprintln(v, "Item 3")
-		fmt.Fprint(v, "\rWill be")
-		fmt.Fprint(v, "deleted\rItem 4\nItem 5")
-	}
-	if v, err := g.SetView("main", 30, -1, maxX, maxY); err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-		b, err := ioutil.ReadFile("Mark.Twain-Tom.Sawyer.txt")
-		if err != nil {
-			panic(err)
-		}
-		fmt.Fprintf(v, "%s", b)
-		v.Editable = true
-		v.Wrap = true
-	}
-	if v, err := g.SetView("input", 30, maxY-2, maxX, maxY); err != nil {
-		if err != gocui.ErrUnknownView {
-			return err
-		}
-
-		fmt.Fprintf(v, "%s", "input cmd here")
-		v.Editable = true
-		v.Editor = gocui.EditorFunc(func(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
-			switch {
-			case ch != 0 && mod == 0:
-				v.EditWrite(ch)
-			case key == gocui.KeySpace:
-				v.EditWrite(' ')
-			case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
-				v.EditDelete(true)
-			case key == gocui.KeyEnd:
-				v.SetCursor(v.Size())
-			}
-		})
-		v.Wrap = false
-
-		if _, err := g.SetCurrentView("input"); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func main() {
-	g, err := gocui.NewGui(gocui.Output256)
-	if err != nil {
-		log.Panicln(err)
+	app := tview.NewApplication()
+	screen := tview.NewTextView()
+
+	hostCell := tview.NewTableCell("No active connection").
+		SetMaxWidth(40).
+		SetTextColor(tcell.ColorDarkRed)
+	statusCell := tview.NewTableCell(" - ").
+		SetMaxWidth(40).
+		SetTextColor(tcell.ColorDarkMagenta)
+	statusBar := tview.NewTable().
+		SetCell(0, 0, hostCell).
+		SetCell(0, 1, statusCell)
+	statusBar.SetBackgroundColor(tcell.ColorDarkGray)
+
+	inputBox := tview.NewInputField().SetLabel("Telnet> ").
+		SetFieldBackgroundColor(tcell.ColorDefault)
+	inputBox.SetDoneFunc(func(key tcell.Key) {
+		switch key {
+		case tcell.KeyEnter:
+			msg, data, err := doCommand(inputBox.GetText())
+			inputBox.SetText("")
+			if len(msg) > 0 {
+				app.QueueUpdateDraw(func() {
+					fmt.Fprintln(screen, msg)
+				})
+			}
+			if err != nil {
+				app.QueueUpdateDraw(func() {
+					fmt.Fprintln(screen, err)
+				})
+			}
+			if len(data) > 0 {
+				app.QueueUpdateDraw(func() {
+					fmt.Fprintln(screen, fmt.Sprintf("send data: %s", string(data)))
+				})
+			}
+		case tcell.KeyEsc:
+			inputBox.SetText("")
+		case tcell.KeyUp:
+		case tcell.KeyDown:
+		case tcell.KeyTab, tcell.KeyBacktab:
+		}
+	})
+
+	layout := tview.NewGrid().SetRows(0, 1, 1).SetColumns(0).
+		AddItem(screen, 0, 0, 1, 1, 1, 30, false).
+		AddItem(statusBar, 1, 0, 1, 1, 1, 30, false).
+		AddItem(inputBox, 2, 0, 1, 1, 1, 30, true)
+
+	app.SetRoot(layout, true)
+	if err := app.Run(); err != nil {
+		panic(err)
 	}
-	defer g.Close()
+}
 
-	g.Cursor = true
-	g.UTF8 = false
-
-	g.SetManagerFunc(layout)
-
-	if err := keybindings(g); err != nil {
-		log.Panicln(err)
+func doCommand(cmd string) (string, []byte, error) {
+	if cmd[0] != '/' {
+		return "", []byte(cmd), nil
 	}
+	cmdStr := strings.TrimRight(cmd[1:], "\r\n ")
+	rd := bufio.NewReader(strings.NewReader(cmdStr))
 
-	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
-		log.Panicln(err)
-	}
+	return Shell.Exec(rd)
 }
