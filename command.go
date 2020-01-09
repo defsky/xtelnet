@@ -24,23 +24,6 @@ type Command struct {
 	help       string
 }
 
-var Commands = CommandMap{
-	"open": &Command{
-		name:       "open",
-		handler:    handleCmdOpen,
-		subCommand: nil,
-		desc:       "Open a connection",
-		help:       "\tUsage: /open <host> <port>",
-	},
-}
-
-var Shell = &Command{
-	name:       "",
-	handler:    nil,
-	subCommand: Commands,
-	desc:       "Available commands",
-}
-
 func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 	if p.Buffered() <= 0 {
 		return c.help, nil, errors.New("need params: <host> <port>")
@@ -73,7 +56,9 @@ func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 	if portNumber < 0 || portNumber > 65535 {
 		return "", nil, errors.New("port number must in range 1-65535")
 	}
+
 	// Todo: add operations to open connection to remote host
+
 	return fmt.Sprintf("connect to %s:%s ...", host, port), nil, nil
 }
 
@@ -107,4 +92,30 @@ func subCmdDesc(c *Command) string {
 	}
 	strings.TrimRight(msg, "\r\n ")
 	return msg
+}
+
+func doCommand(cmd string) (string, []byte, error) {
+	if len(cmd) <= 0 || cmd[0] != '/' {
+		return "", []byte(cmd + "\r\n"), nil
+	}
+	rd := bufio.NewReader(strings.NewReader(cmd[1:]))
+	rd.Peek(1)
+	return shell.Exec(rd)
+}
+
+var shell = &Command{
+	name:       "",
+	handler:    nil,
+	subCommand: commands,
+	desc:       "Available commands",
+}
+
+var commands = CommandMap{
+	"open": &Command{
+		name:       "open",
+		handler:    handleCmdOpen,
+		subCommand: nil,
+		desc:       "Open a connection",
+		help:       "\tUsage: /open <host> <port>",
+	},
 }

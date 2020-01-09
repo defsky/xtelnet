@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"strings"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -63,13 +61,4 @@ func main() {
 	if err := app.Run(); err != nil {
 		panic(err)
 	}
-}
-
-func doCommand(cmd string) (string, []byte, error) {
-	if len(cmd) <= 0 || cmd[0] != '/' {
-		return "", []byte(cmd + "\r\n"), nil
-	}
-	rd := bufio.NewReader(strings.NewReader(cmd[1:]))
-	rd.Peek(1)
-	return Shell.Exec(rd)
 }
