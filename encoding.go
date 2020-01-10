@@ -9,33 +9,33 @@ const (
 	GB18030 = Charset("GB18030")
 )
 
-func DecodeFrom(charset Charset, data []byte) string {
+func DecodeFrom(charset Charset, data []byte) []byte {
 
-	var str string
+	var str []byte
 	switch charset {
 	case GB18030:
 		var decodeBytes, _ = simplifiedchinese.GB18030.NewDecoder().Bytes(data)
-		str = string(decodeBytes)
+		str = decodeBytes
 	case UTF8:
 		fallthrough
 	default:
-		str = string(data)
+		str = data
 	}
 
 	return str
 }
 
-func EncodeTo(charset Charset, s string) []byte {
-	var str string
+func EncodeTo(charset Charset, s []byte) []byte {
+	var str []byte
 
 	switch charset {
 	case GB18030:
-		str, _ = simplifiedchinese.GB18030.NewEncoder().String(s)
+		str, _ = simplifiedchinese.GB18030.NewEncoder().Bytes(s)
 	case UTF8:
 		fallthrough
 	default:
-		str = ""
+
 	}
 
-	return []byte(str)
+	return str
 }
