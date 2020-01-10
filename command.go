@@ -58,6 +58,12 @@ func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 	}
 
 	// Todo: add operations to open connection to remote host
+	sess, err := NewSession(fmt.Sprintf("%s:%s", host, port), screen)
+	if err != nil {
+		fmt.Fprintln(screen, err)
+	}
+	UserShell.SetSession(sess)
+	go sess.Start()
 
 	return fmt.Sprintf("connect to %s:%s ...", host, port), nil, nil
 }
@@ -100,10 +106,10 @@ func doCommand(cmd string) (string, []byte, error) {
 	}
 	rd := bufio.NewReader(strings.NewReader(cmd[1:]))
 	rd.Peek(1)
-	return shell.Exec(rd)
+	return rootCMD.Exec(rd)
 }
 
-var shell = &Command{
+var rootCMD = &Command{
 	name:       "",
 	handler:    nil,
 	subCommand: commands,

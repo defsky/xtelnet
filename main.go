@@ -7,9 +7,18 @@ import (
 	"github.com/rivo/tview"
 )
 
+// gui app
+var app = tview.NewApplication()
+
+var screen = tview.NewTextView().
+	SetDynamicColors(true).
+	SetChangedFunc(func() {
+		app.Draw()
+	})
+
+var UserShell = &Shell{}
+
 func main() {
-	app := tview.NewApplication()
-	screen := tview.NewTextView().SetDynamicColors(true)
 
 	hostCell := tview.NewTableCell("No active connection").
 		SetMaxWidth(40).
@@ -27,21 +36,16 @@ func main() {
 	inputBox.SetDoneFunc(func(key tcell.Key) {
 		switch key {
 		case tcell.KeyEnter:
-			msg, data, err := doCommand(inputBox.GetText())
+			msg, err := UserShell.Exec(inputBox.GetText())
 			inputBox.SetText("")
 			if err != nil {
-				app.QueueUpdateDraw(func() {
+				app.QueueUpdate(func() {
 					fmt.Fprintf(screen, "[red]%s\n", err)
 				})
 			}
 			if len(msg) > 0 {
-				app.QueueUpdateDraw(func() {
+				app.QueueUpdate(func() {
 					fmt.Fprintf(screen, "%s\n", msg)
-				})
-			}
-			if len(data) > 0 {
-				app.QueueUpdateDraw(func() {
-					fmt.Fprintln(screen, fmt.Sprintf("send data: %v", data))
 				})
 			}
 		case tcell.KeyEsc:
@@ -52,10 +56,26 @@ func main() {
 		}
 	})
 
-	layout := tview.NewGrid().SetRows(0, 1, 1).SetColumns(0).
-		AddItem(screen, 0, 0, 1, 1, 1, 30, false).
-		AddItem(statusBar, 1, 0, 1, 1, 1, 30, false).
-		AddItem(inputBox, 2, 0, 1, 1, 1, 30, true)
+	app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
+		key := e.Key()
+		switch key {
+		case tcell.KeyCtrlD:
+			if sess := UserShell.GetSession(); sess != nil {
+				sess.Close()
+			} else {
+				fmt.Fprintln(screen, "No session, Use /open <host> <port> to open one")
+			}
+		}
+		return e
+	})
+	layout := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(screen, 0, 1, false).
+		AddItem(statusBar, 1, 1, false).
+		AddItem(inputBox, 1, 1, true)
+	// layout := tview.NewGrid().SetRows(0, 1, 1).SetColumns(0).
+	// 	AddItem(screen, 0, 0, 1, 1, 1, 30, false).
+	// 	AddItem(statusBar, 1, 0, 1, 1, 1, 30, false).
+	// 	AddItem(inputBox, 2, 0, 1, 1, 1, 30, true)
 
 	app.SetRoot(layout, true)
 	if err := app.Run(); err != nil {
