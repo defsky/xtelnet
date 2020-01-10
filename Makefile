@@ -1,6 +1,6 @@
 build:
-	GOOS=linux GOARCH=amd64 go build
+	GOOS=linux go build
 	
 run:
-	GOOS=linux GOARCH=amd64 go build
+	GOOS=linux go build
 	./xtelnet
