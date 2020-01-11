@@ -19,7 +19,10 @@ var screen = tview.NewTextView().
 var UserShell = &Shell{}
 
 func main() {
-
+	screen.SetDrawFunc(func(s tcell.Screen, x int, y int, w int, h int) (int, int, int, int) {
+		
+		return x, y, w, h
+	})
 	hostCell := tview.NewTableCell("No active connection").
 		SetMaxWidth(40).
 		SetTextColor(tcell.ColorDarkRed)
@@ -32,6 +35,7 @@ func main() {
 	statusBar.SetBackgroundColor(tcell.ColorDarkGray)
 
 	inputBox := tview.NewInputField().SetLabel("Telnet> ").
+		SetLabelColor(tcell.ColorYellow).
 		SetFieldBackgroundColor(tcell.ColorDefault)
 	inputBox.SetDoneFunc(func(key tcell.Key) {
 		switch key {

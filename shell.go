@@ -26,7 +26,6 @@ func (s *Shell) Exec(cmd string) (string, error) {
 
 func (s *Shell) SetSession(sess *Session) {
 	s.session = sess
-	
 }
 
 func (s *Shell) SendData(data []byte) {
