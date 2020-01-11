@@ -9,12 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/defsky/telnet"
 	"github.com/rivo/tview"
 )
 
 type Session struct {
-	nvt    telnet.NVT
 	conn   net.Conn
 	wg     sync.WaitGroup
 	netInQ chan byte
