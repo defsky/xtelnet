@@ -25,6 +25,11 @@ type Session struct {
 	cache  bytes.Buffer
 	out    io.Writer
 	host   string
+	Option *SessionOption
+}
+
+type SessionOption struct {
+	DebugColor bool
 }
 
 func NewSession(host string, out io.Writer) (*Session, error) {
@@ -41,6 +46,7 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 		msgQ:   make(chan int, 1),
 		out:    out,
 		host:   host,
+		Option: &SessionOption{},
 	}, nil
 }
 func (s *Session) Start() {
@@ -91,7 +97,7 @@ DONE:
 			break DONE
 		case b := <-in:
 			buffer.WriteByte(b)
-			if uint8(b) == 27 {
+			if b == byte(0x1b) {
 			ESCAPE_END:
 				for {
 					select {

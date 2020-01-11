@@ -24,6 +24,67 @@ type Command struct {
 	help       string
 }
 
+var rootCMD = &Command{
+	name:       "",
+	handler:    nil,
+	subCommand: commands,
+	desc:       "Available commands",
+}
+
+var debugSubCommands = CommandMap{
+	"color": &Command{
+		name:       "color",
+		handler:    handleCmdDebugColor,
+		subCommand: nil,
+		desc:       "switch color debug",
+		help:       "\tUsage /debug color",
+	},
+}
+var commands = CommandMap{
+	"open": &Command{
+		name:       "/open",
+		handler:    handleCmdOpen,
+		subCommand: nil,
+		desc:       "Open a session",
+		help:       "\tUsage: /open <host> <port>",
+	},
+	"close": &Command{
+		name:       "/close",
+		handler:    handleCmdClose,
+		subCommand: nil,
+		desc:       "Close a session",
+		help:       "\tUsage: /close",
+	},
+	"debug": &Command{
+		name:       "/debug",
+		handler:    nil,
+		subCommand: debugSubCommands,
+		desc:       "Switches for debug",
+		help:       "\tUsage: /debug",
+	},
+}
+
+func handleCmdDebugColor(c *Command, p *bufio.Reader) (string, []byte, error) {
+	if sess := UserShell.GetSession(); sess != nil {
+
+		colorDebug := !sess.Option.DebugColor
+		screen.SetDynamicColors(!colorDebug)
+		sess.Option.DebugColor = colorDebug
+		if colorDebug {
+			return "Color debug opened", nil, nil
+		} else {
+			return "Color debug closed", nil, nil
+		}
+	}
+	return "No active session", nil, nil
+}
+func handleCmdClose(c *Command, p *bufio.Reader) (string, []byte, error) {
+	if sess := UserShell.GetSession(); sess != nil {
+		sess.Close()
+	}
+	return "No active session", nil, nil
+}
+
 func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 	if p.Buffered() <= 0 {
 		return c.help, nil, errors.New("need params: <host> <port>")
@@ -107,21 +168,4 @@ func doCommand(cmd string) (string, []byte, error) {
 	rd := bufio.NewReader(strings.NewReader(cmd[1:]))
 	rd.Peek(1)
 	return rootCMD.Exec(rd)
-}
-
-var rootCMD = &Command{
-	name:       "",
-	handler:    nil,
-	subCommand: commands,
-	desc:       "Available commands",
-}
-
-var commands = CommandMap{
-	"open": &Command{
-		name:       "open",
-		handler:    handleCmdOpen,
-		subCommand: nil,
-		desc:       "Open a connection",
-		help:       "\tUsage: /open <host> <port>",
-	},
 }

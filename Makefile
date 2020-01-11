@@ -3,4 +3,4 @@ build:
 	
 run:
 	GOOS=linux go build
-	./xtelnet
+	RUNEWIDTH_EASTASIAN=1 ./xtelnet
