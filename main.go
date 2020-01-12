@@ -11,7 +11,7 @@ import (
 var app = tview.NewApplication()
 
 var screen = tview.NewTextView().
-	SetDynamicColors(true).
+	SetDynamicColors(true).SetScrollable(false).
 	SetChangedFunc(func() {
 		app.Draw()
 	})
@@ -20,7 +20,7 @@ var UserShell = &Shell{}
 
 func main() {
 	screen.SetDrawFunc(func(s tcell.Screen, x int, y int, w int, h int) (int, int, int, int) {
-		
+
 		return x, y, w, h
 	})
 	hostCell := tview.NewTableCell("No active connection").

@@ -27,7 +27,8 @@ type Session struct {
 }
 
 type SessionOption struct {
-	DebugColor bool
+	DebugColor     bool
+	DebugAnsiColor bool
 }
 
 func NewSession(host string, out io.Writer) (*Session, error) {
@@ -67,7 +68,11 @@ DONE:
 		default:
 			if s.cache.Len() > 0 {
 				//msg := tview.TranslateANSI(s.cache.String())
-				fmt.Fprint(writer, s.cache.String())
+				if s.Option.DebugAnsiColor {
+					fmt.Fprint(s.out, s.cache.String())
+				} else {
+					fmt.Fprint(writer, s.cache.String())
+				}
 				s.cache.Reset()
 			}
 		}

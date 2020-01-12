@@ -39,6 +39,13 @@ var debugSubCommands = CommandMap{
 		desc:       "switch color debug",
 		help:       "\tUsage /debug color",
 	},
+	"ansicolor": &Command{
+		name:       "ansicolor",
+		handler:    handleCmdDebugAnsiColor,
+		subCommand: nil,
+		desc:       "switch ansi color debug",
+		help:       "\tUsage /debug ansicolor",
+	},
 }
 var commands = CommandMap{
 	"open": &Command{
@@ -74,6 +81,19 @@ func handleCmdDebugColor(c *Command, p *bufio.Reader) (string, []byte, error) {
 			return "Color debug opened", nil, nil
 		} else {
 			return "Color debug closed", nil, nil
+		}
+	}
+	return "No active session", nil, nil
+}
+func handleCmdDebugAnsiColor(c *Command, p *bufio.Reader) (string, []byte, error) {
+	if sess := UserShell.GetSession(); sess != nil {
+
+		sess.Option.DebugAnsiColor = !sess.Option.DebugAnsiColor
+
+		if sess.Option.DebugAnsiColor {
+			return "Ansi Color debug opened", nil, nil
+		} else {
+			return "Ansi Color debug closed", nil, nil
 		}
 	}
 	return "No active session", nil, nil
