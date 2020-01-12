@@ -110,7 +110,7 @@ DONE:
 							break ESCAPE_END
 						}
 					default:
-						time.Sleep(100 * time.Millisecond)
+						time.Sleep(300 * time.Millisecond)
 					}
 				}
 			}
@@ -119,12 +119,16 @@ DONE:
 			if err != nil && err != io.EOF {
 				break
 			}
-			msg := DecodeFrom("GB18030", append(b.Bytes(), line...))
-			if msg == nil {
-				b.Write(line)
+			if len(line) > 0 {
+				msg := DecodeFrom("GB18030", append(b.Bytes(), line...))
+				if msg == nil {
+					b.Write(line)
+				} else {
+					out <- msg
+					b.Reset()
+				}
 			} else {
-				out <- msg
-				b.Reset()
+				time.Sleep(300 * time.Millisecond)
 			}
 		}
 	}
@@ -132,6 +136,7 @@ DONE:
 }
 func sender(c net.Conn, out <-chan []byte, done <-chan struct{}, msg chan<- int, wg *sync.WaitGroup) {
 	buf := bufio.NewWriter(c)
+	ticker := time.NewTicker(time.Minute)
 DONE:
 	for {
 		select {
@@ -145,12 +150,21 @@ DONE:
 				break DONE
 			}
 			buf.Flush()
+		case <-ticker.C:
+			_, err := buf.Write([]byte("look\r\n"))
+			if err != nil || err == io.EOF {
+				msg <- 1
+				break DONE
+			}
+			buf.Flush()
+		default:
+			time.Sleep(300 * time.Millisecond)
 		}
 	}
 
 	wg.Done()
 }
-func receiver(c net.Conn, in chan<- byte, done <-chan struct{}, msg chan<- int, wg *sync.WaitGroup) {
+func receiver(c net.Conn, out chan<- byte, done <-chan struct{}, msg chan<- int, wg *sync.WaitGroup) {
 	buf := bufio.NewReaderSize(c, 2048)
 
 DONE:
@@ -168,7 +182,7 @@ DONE:
 				break DONE
 			}
 			if b == byte(255) {
-				// TODO: process IAC sequence
+				// process IAC sequence
 				data, err := parseIAC(buf)
 				if err != nil {
 					msg <- 1
@@ -176,7 +190,7 @@ DONE:
 				}
 				fmt.Fprintf(screen, "IAC %v\n", data)
 			} else {
-				in <- b
+				out <- b
 			}
 		}
 	}
