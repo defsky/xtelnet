@@ -8,27 +8,24 @@ import (
 	"net"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rivo/tview"
 )
 
-type Session struct {
-	conn   net.Conn
-	wg     sync.WaitGroup
-	netInQ chan byte
-	outQ   chan []byte
-	inQ    chan []byte
-	msgQ   chan int
-	done   chan struct{}
-	cache  bytes.Buffer
-	out    io.Writer
-	host   string
-	Option *SessionOption
-}
-
 type SessionOption struct {
 	DebugColor     bool
 	DebugAnsiColor bool
+}
+
+type Session struct {
+	wg     sync.WaitGroup
+	cache  bytes.Buffer
+	conn   net.Conn
+	outBuf chan []byte
+	out    io.Writer
+	host   string
+	Option *SessionOption
 }
 
 func NewSession(host string, out io.Writer) (*Session, error) {
@@ -36,75 +33,129 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Session{
+
+	recvBuf := make(chan byte, 4096)
+	inQ := make(chan []byte, 80)
+	outQ := make(chan []byte, 80)
+
+	sess := &Session{
 		conn:   conn,
-		netInQ: make(chan byte, 4096),
-		outQ:   make(chan []byte, 80),
-		inQ:    make(chan []byte, 80),
-		done:   make(chan struct{}),
-		msgQ:   make(chan int, 1),
+		outBuf: outQ,
 		out:    out,
 		host:   host,
 		Option: &SessionOption{},
-	}, nil
-}
-func (s *Session) Start() {
-	s.wg.Add(3)
-	go receiver(s.conn, s.netInQ, s.done, s.msgQ, &s.wg)
-	go sender(s.conn, s.outQ, s.done, s.msgQ, &s.wg)
-	go messageProcessor(s.netInQ, s.inQ, s.done, &s.wg)
+	}
 
-	writer := tview.ANSIWriter(s.out)
-DONE:
-	for {
-		select {
-		case <-s.done:
-			break DONE
-		case <-s.msgQ:
-			close(s.done)
-			break DONE
-		case line := <-s.inQ:
-			s.cache.Write(line)
-		default:
-			if s.cache.Len() > 0 {
-				//msg := tview.TranslateANSI(s.cache.String())
-				if s.Option.DebugAnsiColor {
-					fmt.Fprint(s.out, s.cache.String())
-				} else {
-					fmt.Fprint(writer, s.cache.String())
+	sess.wg.Add(3)
+	go sess.preprocessor(recvBuf, inQ)
+	go sess.receiver(recvBuf)
+	go sess.sender(outQ)
+
+	go func(s *Session) {
+		writer := tview.ANSIWriter(s.out)
+	DONE:
+		for {
+			select {
+			case line, ok := <-inQ:
+				if !ok {
+					break DONE
 				}
-				s.cache.Reset()
+				s.cache.Write(line)
+			default:
+				if s.cache.Len() > 0 {
+					var w io.Writer
+					if s.Option.DebugAnsiColor {
+						w = s.out
+					} else {
+						w = writer
+					}
+					fmt.Fprint(w, s.cache.String())
+					s.cache.Reset()
+				} else {
+					time.Sleep(300 * time.Millisecond)
+				}
 			}
 		}
-	}
-	s.wg.Wait()
-	fmt.Fprintf(s.out, "\nsession to %s closed ...\n", s.host)
-	UserShell.SetSession(nil)
-}
-func (s *Session) Close() {
-	s.conn.Close()
-	//close(s.done)
-}
-func (s *Session) Send(data []byte) {
-	s.outQ <- data
+
+		s.wg.Wait()
+		fmt.Fprintf(s.out, "\nsession to %s closed ...\n", s.host)
+		UserShell.SetSession(nil)
+	}(sess)
+
+	return sess, nil
 }
 
-func messageProcessor(in <-chan byte, out chan<- []byte, done <-chan struct{}, wg *sync.WaitGroup) {
-	var buffer bytes.Buffer
+func (s *Session) Close() {
+	close(s.outBuf)
+}
+func (s *Session) Send(data []byte) {
+	s.outBuf <- data
+}
+
+func (s *Session) sender(in <-chan []byte) {
+	writer := bufio.NewWriter(s.conn)
+
+DONE:
+	for data := range in {
+		if data == nil {
+			break DONE
+		}
+		data = EncodeTo("GB18030", data)
+		_, err := writer.Write(data)
+		if err != nil {
+			break DONE
+		}
+		writer.Flush()
+	}
+
+	s.conn.Close()
+	s.wg.Done()
+}
+
+func (s *Session) receiver(out chan<- byte) {
+	buf := bufio.NewReaderSize(s.conn, 2048)
+
+	var b byte
+	var err error
+DONE:
+	for b, err = buf.ReadByte(); err == nil; b, err = buf.ReadByte() {
+		if b == byte(255) {
+			cmd, err := readIAC(buf)
+			if err != nil {
+				break DONE
+			}
+			writeBytes(out, []byte(fmt.Sprintf("IAC %v\n", cmd)))
+			continue
+		}
+		out <- b
+	}
+
+	writeBytes(out, handleConnError(err))
+
+	close(out)
+	s.wg.Done()
+}
+
+func (s *Session) preprocessor(in <-chan byte, out chan<- []byte) {
 	var b bytes.Buffer
-	buf := bufio.NewReadWriter(bufio.NewReader(&buffer), bufio.NewWriter(&buffer))
+	buffer := new(bytes.Buffer)
+	buf := bufio.NewReader(buffer)
 DONE:
 	for {
 		select {
-		case <-done:
-			break DONE
-		case b := <-in:
+		case b, ok := <-in:
+			if !ok {
+				break DONE
+			}
 			buffer.WriteByte(b)
 			if b == byte(0x1b) {
 			ESCAPE_END:
 				for {
 					select {
-					case eb := <-in:
+					case eb, ok := <-in:
+						if !ok {
+							break DONE
+						}
 						buffer.WriteByte(eb)
 						if eb == byte('m') {
 							break ESCAPE_END
@@ -121,98 +172,80 @@ DONE:
 			}
 			if len(line) > 0 {
 				msg := DecodeFrom("GB18030", append(b.Bytes(), line...))
-				if msg == nil {
+				_, err := utf8.DecodeLastRune(msg)
+				if err == utf8.RuneError {
 					b.Write(line)
 				} else {
 					out <- msg
 					b.Reset()
 				}
 			} else {
-				time.Sleep(300 * time.Millisecond)
-			}
-		}
-	}
-	wg.Done()
-}
-func sender(c net.Conn, out <-chan []byte, done <-chan struct{}, msg chan<- int, wg *sync.WaitGroup) {
-	buf := bufio.NewWriter(c)
-	ticker := time.NewTicker(time.Minute)
-DONE:
-	for {
-		select {
-		case <-done:
-			break DONE
-		case data := <-out:
-			data = EncodeTo("GB18030", data)
-			_, err := buf.Write(data)
-			if err != nil || err == io.EOF {
-				msg <- 1
-				break DONE
-			}
-			buf.Flush()
-		case <-ticker.C:
-			_, err := buf.Write([]byte("look\r\n"))
-			if err != nil || err == io.EOF {
-				msg <- 1
-				break DONE
-			}
-			buf.Flush()
-		default:
-			time.Sleep(300 * time.Millisecond)
-		}
-	}
-
-	wg.Done()
-}
-func receiver(c net.Conn, out chan<- byte, done <-chan struct{}, msg chan<- int, wg *sync.WaitGroup) {
-	buf := bufio.NewReaderSize(c, 2048)
-
-DONE:
-	for {
-		select {
-		case <-done:
-			break DONE
-		default:
-			b, err := buf.ReadByte()
-			if err != nil {
-				if err == io.EOF {
-
-				}
-				msg <- 1
-				break DONE
-			}
-			if b == byte(255) {
-				// process IAC sequence
-				data, err := parseIAC(buf)
-				if err != nil {
-					msg <- 1
-					break DONE
-				}
-				fmt.Fprintf(screen, "IAC %v\n", data)
-			} else {
-				out <- b
+				time.Sleep(500 * time.Millisecond)
 			}
 		}
 	}
 
-	wg.Done()
+	close(out)
+	s.wg.Done()
 }
 
-func parseIAC(buf *bufio.Reader) ([]byte, error) {
-	ret := make([]byte, 0)
+func writeBytes(out chan<- byte, p []byte) {
+	for _, v := range p {
+		out <- v
+	}
+}
+
+func handleConnError(err error) []byte {
+	switch err {
+	case io.EOF:
+		return []byte("connection was closed by server\n")
+	default:
+		return []byte(err.Error())
+	}
+}
+
+func readIAC(reader *bufio.Reader) ([]byte, error) {
+	iac := new(bytes.Buffer)
+	isSubCmd := false
+
 	var b byte
 	var err error
-	for b, err = buf.ReadByte(); err == nil; {
-		ret = append(ret, b)
-		switch uint8(b) {
-		case 254, 253, 252, 251:
-
-		default:
-			return ret, nil
+DONE:
+	for b, err = reader.ReadByte(); err == nil; b, err = reader.ReadByte() {
+		// drop IAC byte
+		if b == byte(255) {
+			continue
 		}
 
-		b, err = buf.ReadByte()
+		iac.WriteByte(b)
+
+		switch uint8(b) {
+		case 254, // DONT
+			253, // DO
+			252, // WONT
+			251: // WILL
+
+			// read next byte
+		case 250: // IAC SB
+			isSubCmd = true
+		default:
+			if isSubCmd {
+				// IAC SE
+				if b == byte(240) {
+					break DONE
+				}
+
+				// read next byte
+				break
+			}
+
+			break DONE
+		}
 	}
 
-	return nil, err
+	if err != nil {
+		return nil, err
+	} else {
+		return iac.Bytes(), nil
+	}
 }

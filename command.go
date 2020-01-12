@@ -138,15 +138,17 @@ func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 		return "", nil, errors.New("port number must in range 1-65535")
 	}
 
-	// Todo: add operations to open connection to remote host
+	// open session to remote host
+	fmt.Fprintf(screen, "connect to %s:%s ...\n", host, port)
 	sess, err := NewSession(fmt.Sprintf("%s:%s", host, port), screen)
 	if err != nil {
 		fmt.Fprintln(screen, err)
+		return "", nil, err
 	}
-	UserShell.SetSession(sess)
-	go sess.Start()
 
-	return fmt.Sprintf("connect to %s:%s ...", host, port), nil, nil
+	UserShell.SetSession(sess)
+
+	return "connection established", nil, nil
 }
 
 func (c *Command) Exec(p *bufio.Reader) (string, []byte, error) {
