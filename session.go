@@ -52,7 +52,15 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 	go sess.sender(outQ)
 
 	go func(s *Session) {
+		tk := time.NewTicker(time.Minute)
+		for _ = range tk.C {
+			s.Send([]byte("look\r\n"))
+		}
+	}(sess)
+
+	go func(s *Session) {
 		writer := tview.ANSIWriter(s.out)
+		var w io.Writer
 	DONE:
 		for {
 			select {
@@ -63,7 +71,6 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 				s.cache.Write(line)
 			default:
 				if s.cache.Len() > 0 {
-					var w io.Writer
 					if s.Option.DebugAnsiColor {
 						w = s.out
 					} else {
@@ -77,6 +84,7 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 			}
 		}
 
+		fmt.Fprint(w, s.cache.String())
 		s.wg.Wait()
 		fmt.Fprintf(s.out, "\nsession to %s closed ...\n", s.host)
 		UserShell.SetSession(nil)
@@ -96,8 +104,9 @@ func (s *Session) sender(in <-chan []byte) {
 	writer := bufio.NewWriter(s.conn)
 
 DONE:
-	for data := range in {
+	for data := range s.outBuf {
 		if data == nil {
+			s.conn.Close()
 			break DONE
 		}
 		data = EncodeTo("GB18030", data)
@@ -108,7 +117,6 @@ DONE:
 		writer.Flush()
 	}
 
-	s.conn.Close()
 	s.wg.Done()
 }
 
@@ -170,18 +178,17 @@ DONE:
 			if err != nil && err != io.EOF {
 				break
 			}
-			if len(line) > 0 {
-				msg := DecodeFrom("GB18030", append(b.Bytes(), line...))
-				_, err := utf8.DecodeLastRune(msg)
-				if err == utf8.RuneError {
-					b.Write(line)
-				} else {
-					out <- msg
-					b.Reset()
-				}
+
+			msg := DecodeFrom("GB18030", append(b.Bytes(), line...))
+			r, _ := utf8.DecodeLastRune(msg)
+			if r == utf8.RuneError {
+				b.Write(line)
+				time.Sleep(100 * time.Millisecond)
 			} else {
-				time.Sleep(500 * time.Millisecond)
+				out <- msg
+				b.Reset()
 			}
+
 		}
 	}
 
