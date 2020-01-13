@@ -20,12 +20,13 @@ type SessionOption struct {
 
 type Session struct {
 	wg     sync.WaitGroup
-	cache  bytes.Buffer
 	conn   net.Conn
-	outBuf chan []byte
 	out    io.Writer
 	host   string
 	Option *SessionOption
+
+	inBuffer  chan byte
+	outBuffer chan []byte
 }
 
 func NewSession(host string, out io.Writer) (*Session, error) {
@@ -34,22 +35,17 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 		return nil, err
 	}
 
-	recvBuf := make(chan byte, 4096)
-	inQ := make(chan []byte, 80)
-	outQ := make(chan []byte, 80)
-
 	sess := &Session{
-		conn:   conn,
-		outBuf: outQ,
-		out:    out,
-		host:   host,
-		Option: &SessionOption{},
+		conn:      conn,
+		out:       out,
+		host:      host,
+		Option:    &SessionOption{},
+		inBuffer:  make(chan byte, 4096),
+		outBuffer: make(chan []byte, 80),
 	}
 
-	sess.wg.Add(3)
-	go sess.preprocessor(recvBuf, inQ)
-	go sess.receiver(recvBuf)
-	go sess.sender(outQ)
+	sess.wg.Add(1)
+	go sess.receiver()
 
 	go func(s *Session) {
 		tk := time.NewTicker(time.Minute)
@@ -58,54 +54,23 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 		}
 	}(sess)
 
-	go func(s *Session) {
-		writer := tview.ANSIWriter(s.out)
-		var w io.Writer
-	DONE:
-		for {
-			select {
-			case line, ok := <-inQ:
-				if !ok {
-					break DONE
-				}
-				s.cache.Write(line)
-			default:
-				if s.cache.Len() > 0 {
-					if s.Option.DebugAnsiColor {
-						w = s.out
-					} else {
-						w = writer
-					}
-					fmt.Fprint(w, s.cache.String())
-					s.cache.Reset()
-				} else {
-					time.Sleep(300 * time.Millisecond)
-				}
-			}
-		}
-
-		fmt.Fprint(w, s.cache.String())
-		s.wg.Wait()
-		fmt.Fprintf(s.out, "\nsession to %s closed ...\n", s.host)
-		UserShell.SetSession(nil)
-	}(sess)
-
 	return sess, nil
 }
 
 func (s *Session) Close() {
-	close(s.outBuf)
+	close(s.outBuffer)
 }
 func (s *Session) Send(data []byte) {
-	s.outBuf <- data
+	s.outBuffer <- data
 }
 
-func (s *Session) sender(in <-chan []byte) {
+func (s *Session) sender() {
 	writer := bufio.NewWriter(s.conn)
 
 DONE:
-	for data := range s.outBuf {
-		if data == nil {
+	for {
+		data, ok := <-s.outBuffer
+		if !ok {
 			s.conn.Close()
 			break DONE
 		}
@@ -120,82 +85,102 @@ DONE:
 	s.wg.Done()
 }
 
-func (s *Session) receiver(out chan<- byte) {
-	buf := bufio.NewReaderSize(s.conn, 2048)
+func (s *Session) preprocessor() {
+	defer s.wg.Done()
 
-	var b byte
-	var err error
-DONE:
-	for b, err = buf.ReadByte(); err == nil; b, err = buf.ReadByte() {
-		if b == byte(255) {
-			cmd, err := readIAC(buf)
-			if err != nil {
-				break DONE
-			}
-			writeBytes(out, []byte(fmt.Sprintf("IAC %v\n", cmd)))
-			continue
-		}
-		out <- b
-	}
-
-	writeBytes(out, handleConnError(err))
-
-	close(out)
-	s.wg.Done()
-}
-
-func (s *Session) preprocessor(in <-chan byte, out chan<- []byte) {
-	var b bytes.Buffer
+	var w io.Writer
+	ansiWriter := tview.ANSIWriter(s.out)
 	buffer := new(bytes.Buffer)
-	buf := bufio.NewReader(buffer)
+
+	s.wg.Add(1)
+	go s.sender()
+
 DONE:
 	for {
 		select {
-		case b, ok := <-in:
+		case b, ok := <-s.inBuffer:
 			if !ok {
 				break DONE
 			}
 			buffer.WriteByte(b)
-			if b == byte(0x1b) {
-			ESCAPE_END:
-				for {
-					select {
-					case eb, ok := <-in:
-						if !ok {
-							break DONE
-						}
-						buffer.WriteByte(eb)
-						if eb == byte('m') {
-							break ESCAPE_END
-						}
-					default:
-						time.Sleep(300 * time.Millisecond)
-					}
-				}
-			}
 		default:
-			line, err := buf.ReadBytes('\n')
-			if err != nil && err != io.EOF {
-				break
-			}
 
-			msg := DecodeFrom("GB18030", append(b.Bytes(), line...))
+			msg := DecodeFrom("GB18030", buffer.Bytes())
 			r, _ := utf8.DecodeLastRune(msg)
 			if r == utf8.RuneError {
-				b.Write(line)
-				time.Sleep(100 * time.Millisecond)
-			} else {
-				out <- msg
-				b.Reset()
-			}
+				b2, ok := <-s.inBuffer
+				if !ok {
+					break DONE
+				}
+				buffer.WriteByte(b2)
 
+				break
+			}
+			buffer.Reset()
+
+			if s.Option.DebugAnsiColor {
+				w = s.out
+			} else {
+				w = ansiWriter
+			}
+			fmt.Fprint(w, string(msg))
 		}
 	}
 
-	close(out)
-	s.wg.Done()
+	if buffer.Len() > 0 {
+		msg := DecodeFrom("GB18030", buffer.Bytes())
+		if s.Option.DebugAnsiColor {
+			w = s.out
+		} else {
+			w = ansiWriter
+		}
+		fmt.Fprint(w, string(msg))
+	}
 }
 
+func (s *Session) receiver() {
+	defer func() {
+		close(s.inBuffer)
+		s.wg.Done()
+	}()
+
+	buf := bufio.NewReaderSize(s.conn, 2048)
+
+	var b byte
+	var err error
+
+	s.wg.Add(1)
+	go s.preprocessor()
+
+DONE:
+	for b, err = buf.ReadByte(); err == nil; b, err = buf.ReadByte() {
+		// IAC
+		if b == byte(0xff) {
+			cmd, e := readIAC(buf)
+			if e != nil {
+				break DONE
+			}
+			writeBytes(s.inBuffer, []byte(fmt.Sprintf("IAC %v\n", cmd)))
+			continue
+		}
+
+		// ansi escape sequence
+		if b == byte(0x1b) {
+			s.inBuffer <- b
+			data, e := readEscSeq(buf)
+			if e != nil {
+				break DONE
+			}
+			writeBytes(s.inBuffer, data)
+			continue
+		}
+		s.inBuffer <- b
+	}
+
+	writeBytes(s.inBuffer, handleConnError(err))
+}
+
+// writeBytes will write p into channel out byte by byte
 func writeBytes(out chan<- byte, p []byte) {
 	for _, v := range p {
 		out <- v
@@ -205,20 +190,42 @@ func writeBytes(out chan<- byte, p []byte) {
 func handleConnError(err error) []byte {
 	switch err {
 	case io.EOF:
-		return []byte("connection was closed by server\n")
+		return []byte("\nconnection was closed by server ...\n")
 	default:
-		return []byte(err.Error())
+		return []byte(fmt.Sprintf("\n%s\n", err.Error()))
 	}
 }
 
-func readIAC(reader *bufio.Reader) ([]byte, error) {
+// readEscSeq will read a complete ansi escape sequence from inbuffer
+func readEscSeq(r *bufio.Reader) ([]byte, error) {
+	buf := new(bytes.Buffer)
+
+	var b byte
+	var err error
+DONE:
+	for b, err = r.ReadByte(); err == nil; b, err = r.ReadByte() {
+		buf.WriteByte(b)
+
+		if b == byte('m') {
+			break DONE
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// readIAC will read a complete NVT command from inbuffer
+func readIAC(r *bufio.Reader) ([]byte, error) {
 	iac := new(bytes.Buffer)
 	isSubCmd := false
 
 	var b byte
 	var err error
 DONE:
-	for b, err = reader.ReadByte(); err == nil; b, err = reader.ReadByte() {
+	for b, err = r.ReadByte(); err == nil; b, err = r.ReadByte() {
 		// drop IAC byte
 		if b == byte(255) {
 			continue

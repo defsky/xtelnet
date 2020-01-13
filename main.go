@@ -66,6 +66,7 @@ func main() {
 		case tcell.KeyCtrlD:
 			if sess := UserShell.GetSession(); sess != nil {
 				sess.Close()
+				UserShell.SetSession(nil)
 			} else {
 				fmt.Fprintln(screen, "No session, Use /open <host> <port> to open one")
 			}
