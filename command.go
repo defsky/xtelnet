@@ -176,8 +176,8 @@ func (c *Command) Exec(p *bufio.Reader) (string, []byte, error) {
 
 func subCmdDesc(c *Command) string {
 	msg := c.desc + ":\n"
-	for k, v := range c.subCommand {
-		msg = msg + fmt.Sprintf("\t%-10s%-50s\n", k, v.desc)
+	for _, v := range c.subCommand {
+		msg = msg + fmt.Sprintf("\t%-10s%-50s\n", v.name, v.desc)
 	}
 	strings.TrimRight(msg, "\r\n ")
 	return msg

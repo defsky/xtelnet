@@ -13,6 +13,20 @@ import (
 	"github.com/rivo/tview"
 )
 
+type TaskType int
+
+const (
+	Timer TaskType = iota
+	Ticker
+)
+
+type TaskHandler func()
+type ScheduleTask struct {
+	ttype   TaskType
+	handler TaskHandler
+}
+type TickTaskMap map[time.Duration][]ScheduleTask
+
 type SessionOption struct {
 	DebugColor     bool
 	DebugAnsiColor bool
@@ -27,6 +41,8 @@ type Session struct {
 
 	inBuffer  chan byte
 	outBuffer chan []byte
+
+	closeTimer chan struct{}
 }
 
 func NewSession(host string, out io.Writer) (*Session, error) {
@@ -36,34 +52,50 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 	}
 
 	sess := &Session{
-		conn:      conn,
-		out:       out,
-		host:      host,
-		Option:    &SessionOption{},
-		inBuffer:  make(chan byte, 4096),
-		outBuffer: make(chan []byte, 80),
+		conn:       conn,
+		out:        out,
+		host:       host,
+		Option:     &SessionOption{},
+		inBuffer:   make(chan byte, 4096),
+		outBuffer:  make(chan []byte, 80),
+		closeTimer: make(chan struct{}),
 	}
 
 	sess.wg.Add(1)
 	go sess.receiver()
 
-	go func(s *Session) {
-		tk := time.NewTicker(time.Minute)
-		for _ = range tk.C {
-			s.Send([]byte("look\r\n"))
-		}
-	}(sess)
+	sess.RunEvery(time.Minute, func() {
+		sess.Send([]byte("look\r\n"))
+	})
 
 	return sess, nil
 }
 
 func (s *Session) Close() {
+	close(s.closeTimer)
 	close(s.outBuffer)
 }
 func (s *Session) Send(data []byte) {
 	s.outBuffer <- data
 }
+func (s *Session) RunAfter(d time.Duration, f func()) {
 
+}
+func (s *Session) RunEvery(d time.Duration, f func()) {
+	ticker := time.NewTicker(d)
+	go func(f func()) {
+		defer ticker.Stop()
+	DONE:
+		for {
+			select {
+			case <-ticker.C:
+				f()
+			case <-s.closeTimer:
+				break DONE
+			}
+		}
+	}(f)
+}
 func (s *Session) sender() {
 	writer := bufio.NewWriter(s.conn)
 
