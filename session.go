@@ -136,26 +136,26 @@ DONE:
 			}
 			buffer.WriteByte(b)
 		default:
+			if buffer.Len() > 0 {
+				msg := DecodeFrom("GB18030", buffer.Bytes())
+				r, _ := utf8.DecodeLastRune(msg)
+				if r != utf8.RuneError {
+					buffer.Reset()
 
-			msg := DecodeFrom("GB18030", buffer.Bytes())
-			r, _ := utf8.DecodeLastRune(msg)
-			if r == utf8.RuneError {
-				b2, ok := <-s.inBuffer
-				if !ok {
-					break DONE
+					if s.Option.DebugAnsiColor {
+						w = s.out
+					} else {
+						w = ansiWriter
+					}
+					fmt.Fprint(w, string(msg))
+					break
 				}
-				buffer.WriteByte(b2)
-
-				break
 			}
-			buffer.Reset()
-
-			if s.Option.DebugAnsiColor {
-				w = s.out
-			} else {
-				w = ansiWriter
+			b2, ok := <-s.inBuffer
+			if !ok {
+				break DONE
 			}
-			fmt.Fprint(w, string(msg))
+			buffer.WriteByte(b2)
 		}
 	}
 
@@ -192,7 +192,7 @@ DONE:
 			if e != nil {
 				break DONE
 			}
-			writeBytes(s.inBuffer, []byte(fmt.Sprintf("IAC %v\n", cmd)))
+			writeBytes(s.inBuffer, []byte(fmt.Sprintf("IAC %v\r\n", cmd)))
 			continue
 		}
 
@@ -260,10 +260,15 @@ func readIAC(r *bufio.Reader) ([]byte, error) {
 	var err error
 DONE:
 	for b, err = r.ReadByte(); err == nil; b, err = r.ReadByte() {
-		// drop IAC byte
-		if b == byte(255) {
-			continue
-		}
+		// embeded IAC
+		// if b == byte(255) {
+		// 	cmd, e := readIAC(r)
+		// 	if e != nil {
+		// 		break DONE
+		// 	}
+		// 	iac.Write(cmd)
+
+		// }
 
 		iac.WriteByte(b)
 
