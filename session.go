@@ -166,14 +166,16 @@ DONE:
 
 		// ansi escape sequence
 		if b == byte(0x1b) {
-			s.inBuffer <- b
 			data, e := readEscSeq(buf)
 			if e != nil {
 				break DONE
 			}
+			s.inBuffer <- b
 			writeBytes(s.inBuffer, data)
+
 			continue
 		}
+
 		s.inBuffer <- b
 	}
 
