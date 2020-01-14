@@ -27,11 +27,13 @@ type ScheduleTask struct {
 }
 type TickTaskMap map[time.Duration][]ScheduleTask
 
+// SessionOption contains some options of session
 type SessionOption struct {
 	DebugColor     bool
 	DebugAnsiColor bool
 }
 
+// Session is a telnet session based on net.Conn
 type Session struct {
 	wg     sync.WaitGroup
 	conn   net.Conn
@@ -45,6 +47,7 @@ type Session struct {
 	closeTimer chan struct{}
 }
 
+// NewSession will return a new session with host and output message to out
 func NewSession(host string, out io.Writer) (*Session, error) {
 	conn, err := net.DialTimeout("tcp", host, 30*time.Second)
 	if err != nil {
@@ -71,16 +74,23 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 	return sess, nil
 }
 
+// Close will close session
 func (s *Session) Close() {
 	close(s.closeTimer)
 	close(s.outBuffer)
 }
+
+// Send wil send data to session
 func (s *Session) Send(data []byte) {
 	s.outBuffer <- data
 }
+
+// RunAfter wil call f once after d duration
 func (s *Session) RunAfter(d time.Duration, f func()) {
 
 }
+
+// RunEvery will call f every d duaration reached periodly
 func (s *Session) RunEvery(d time.Duration, f func()) {
 	ticker := time.NewTicker(d)
 	go func(f func()) {
@@ -96,6 +106,7 @@ func (s *Session) RunEvery(d time.Duration, f func()) {
 		}
 	}(f)
 }
+
 func (s *Session) sender() {
 	writer := bufio.NewWriter(s.conn)
 
@@ -260,15 +271,10 @@ func readIAC(r *bufio.Reader) ([]byte, error) {
 	var err error
 DONE:
 	for b, err = r.ReadByte(); err == nil; b, err = r.ReadByte() {
-		// embeded IAC
-		// if b == byte(255) {
-		// 	cmd, e := readIAC(r)
-		// 	if e != nil {
-		// 		break DONE
-		// 	}
-		// 	iac.Write(cmd)
-
-		// }
+		// drop IAC byte when readIAC
+		if b == byte(255) {
+			continue
+		}
 
 		iac.WriteByte(b)
 
