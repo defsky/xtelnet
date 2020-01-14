@@ -139,7 +139,7 @@ func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 	}
 
 	// open session to remote host
-	fmt.Fprintf(screen, "connect to %s:%s ...\n", host, port)
+	fmt.Fprintf(screen, "connecting to %s:%s ...\n", host, port)
 	sess, err := NewSession(fmt.Sprintf("%s:%s", host, port), screen)
 	if err != nil {
 		fmt.Fprintln(screen, err)

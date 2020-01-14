@@ -35,11 +35,12 @@ type SessionOption struct {
 
 // Session is a telnet session based on net.Conn
 type Session struct {
-	wg     sync.WaitGroup
-	conn   net.Conn
-	out    io.Writer
-	host   string
-	Option *SessionOption
+	wg      sync.WaitGroup
+	Option  *SessionOption
+	host    string
+	out     io.Writer
+	conn    net.Conn
+	closing bool
 
 	inBuffer  chan byte
 	outBuffer chan []byte
@@ -55,45 +56,77 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 	}
 
 	sess := &Session{
-		conn:       conn,
-		out:        out,
-		host:       host,
 		Option:     &SessionOption{},
+		host:       host,
+		out:        out,
+		conn:       conn,
 		inBuffer:   make(chan byte, 4096),
 		outBuffer:  make(chan []byte, 80),
 		closeTimer: make(chan struct{}),
 	}
 
-	sess.wg.Add(1)
-	go sess.receiver()
-
 	sess.RunEvery(time.Minute, func() {
 		sess.Send([]byte("look\r\n"))
 	})
 
+	sess.wg.Add(1)
+	go sess.receiver()
+
 	return sess, nil
+}
+
+// IsAlive
+func (s *Session) IsAlive() bool {
+	return !s.closing
 }
 
 // Close will close session
 func (s *Session) Close() {
+	if s.closing {
+		return
+	}
+	s.closing = true
 	close(s.closeTimer)
 	close(s.outBuffer)
 }
 
 // Send wil send data to session
-func (s *Session) Send(data []byte) {
+func (s *Session) Send(data []byte) bool {
+	if s.closing {
+		return false
+	}
+	fmt.Fprint(s.out, string(data))
 	s.outBuffer <- data
+
+	return true
 }
 
-// RunAfter wil call f once after d duration
+// RunAfter wil call f only once when d duration elapsed
 func (s *Session) RunAfter(d time.Duration, f func()) {
+	timer := time.NewTimer(d)
 
+	s.wg.Add(1)
+	go func(f func()) {
+		defer s.wg.Done()
+		defer timer.Stop()
+
+		select {
+		case <-timer.C:
+			f()
+		case <-s.closeTimer:
+			// close timer
+		}
+
+	}(f)
 }
 
-// RunEvery will call f every d duaration reached periodly
+// RunEvery will call f periodly when every d duaration elapsed
 func (s *Session) RunEvery(d time.Duration, f func()) {
 	ticker := time.NewTicker(d)
+
+	s.wg.Add(1)
 	go func(f func()) {
+		defer s.wg.Done()
 		defer ticker.Stop()
 	DONE:
 		for {
@@ -107,29 +140,13 @@ func (s *Session) RunEvery(d time.Duration, f func()) {
 	}(f)
 }
 
-func (s *Session) sender() {
-	writer := bufio.NewWriter(s.conn)
-
-DONE:
-	for {
-		data, ok := <-s.outBuffer
-		if !ok {
-			s.conn.Close()
-			break DONE
-		}
-		data = EncodeTo("GB18030", data)
-		_, err := writer.Write(data)
-		if err != nil {
-			break DONE
-		}
-		writer.Flush()
-	}
-
-	s.wg.Done()
-}
-
 func (s *Session) preprocessor() {
-	defer s.wg.Done()
+	defer func() {
+		s.Close()
+		s.wg.Done()
+		s.wg.Wait()
+		fmt.Fprintln(s.out, "Session closed")
+	}()
 
 	var w io.Writer
 	ansiWriter := tview.ANSIWriter(s.out)
@@ -196,9 +213,14 @@ func (s *Session) receiver() {
 	go s.preprocessor()
 
 DONE:
-	for b, err = buf.ReadByte(); err == nil; b, err = buf.ReadByte() {
+	for {
+		b, err = buf.ReadByte()
+		if err != nil {
+			break DONE
+		}
+
 		// IAC
-		if b == byte(0xff) {
+		if b == byte(IAC) {
 			cmd, e := readIAC(buf)
 			if e != nil {
 				break DONE
@@ -223,6 +245,33 @@ DONE:
 	}
 
 	writeBytes(s.inBuffer, handleConnError(err))
+}
+
+func (s *Session) sender() {
+	defer s.wg.Done()
+
+	writer := bufio.NewWriter(s.conn)
+
+DONE:
+	for {
+		data, ok := <-s.outBuffer
+		if !ok {
+			s.conn.Close()
+			break DONE
+		}
+		data = EncodeTo("GB18030", data)
+
+		_, err := writer.Write(data)
+		if err != nil {
+			writeBytes(s.inBuffer, []byte(err.Error()+"\n"))
+			continue
+		}
+
+		err = writer.Flush()
+		if err != nil {
+			writeBytes(s.inBuffer, []byte(err.Error()+"\n"))
+		}
+	}
 }
 
 // writeBytes will write p into channel out byte by byte

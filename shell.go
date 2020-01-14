@@ -30,8 +30,11 @@ func (s *Shell) SetSession(sess *Session) {
 
 func (s *Shell) SendData(data []byte) {
 	if s.session != nil {
-		s.session.Send(data)
-		fmt.Fprintln(screen, string(data))
+		ok := s.session.Send(data)
+		if !ok {
+			fmt.Fprintln(screen, "send failed ...")
+			UserShell.SetSession(nil)
+		}
 	} else {
 		fmt.Fprintln(screen, "No session. Use /open <host> <port> to open one")
 	}
