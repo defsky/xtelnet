@@ -42,8 +42,9 @@ type Session struct {
 	conn    net.Conn
 	closing bool
 
-	inBuffer  chan byte
-	outBuffer chan []byte
+	inBuffer    chan byte
+	iacInBuffer chan *IACMessage
+	outBuffer   chan []byte
 
 	closeTimer chan struct{}
 }
@@ -56,13 +57,14 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 	}
 
 	sess := &Session{
-		Option:     &SessionOption{},
-		host:       host,
-		out:        out,
-		conn:       conn,
-		inBuffer:   make(chan byte, 4096),
-		outBuffer:  make(chan []byte, 80),
-		closeTimer: make(chan struct{}),
+		Option:      &SessionOption{},
+		host:        host,
+		out:         out,
+		conn:        conn,
+		inBuffer:    make(chan byte, 4096),
+		iacInBuffer: make(chan *IACMessage, 20),
+		outBuffer:   make(chan []byte, 80),
+		closeTimer:  make(chan struct{}),
 	}
 
 	sess.RunEvery(time.Minute, func() {
@@ -163,6 +165,11 @@ DONE:
 				break DONE
 			}
 			buffer.WriteByte(b)
+		case b, ok := <-s.iacInBuffer:
+			if !ok {
+				break DONE
+			}
+
 		default:
 			if buffer.Len() > 0 {
 				msg := DecodeFrom("GB18030", buffer.Bytes())
@@ -198,6 +205,9 @@ DONE:
 	}
 }
 
+func (s *Session) iacprocessor() {
+
+}
 func (s *Session) receiver() {
 	defer func() {
 		close(s.inBuffer)
@@ -221,11 +231,12 @@ DONE:
 
 		// IAC
 		if b == byte(IAC) {
-			cmd, e := readIAC(buf)
+			iac, e := readIACMessage(buf)
 			if e != nil {
 				break DONE
 			}
-			writeBytes(s.inBuffer, []byte(fmt.Sprintf("IAC %v\r\n", cmd)))
+			s.iacInBuffer <- iac
+			writeBytes(s.inBuffer, []byte(fmt.Sprintf("IAC %v\n", cmd)))
 			continue
 		}
 
@@ -312,6 +323,28 @@ DONE:
 }
 
 // readIAC will read a complete NVT command from inbuffer
+func readIACMessage(r *bufio.Reader) (*IACMessage, error) {
+	iac := &IACMessage{}
+	var err error
+	var b byte
+	for {
+		b, err = r.ReadByte()
+		if err != nil {
+			break
+		}
+		if false == iac.Scan(b) {
+			break
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return iac, nil
+}
+
+// readIAC will read a complete NVT command from inbuffer
 func readIAC(r *bufio.Reader) ([]byte, error) {
 	iac := new(bytes.Buffer)
 	isSubCmd := false
@@ -321,25 +354,23 @@ func readIAC(r *bufio.Reader) ([]byte, error) {
 DONE:
 	for b, err = r.ReadByte(); err == nil; b, err = r.ReadByte() {
 		// drop IAC byte when readIAC
-		if b == byte(255) {
+		if b == byte(IAC) {
 			continue
 		}
 
 		iac.WriteByte(b)
 
-		switch uint8(b) {
-		case 254, // DONT
-			253, // DO
-			252, // WONT
-			251: // WILL
+		switch b {
+		case byte(WILL), byte(WONT), byte(DO), byte(DONT):
 
 			// read next byte
-		case 250: // IAC SB
+		case byte(SB): // IAC SB
 			isSubCmd = true
+
 		default:
 			if isSubCmd {
 				// IAC SE
-				if b == byte(240) {
+				if b == byte(SE) {
 					break DONE
 				}
 
