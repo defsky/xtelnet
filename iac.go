@@ -7,13 +7,13 @@ import "fmt"
 type IACParseStatus int
 
 type NVTOption interface {
-	Parse(NVTCommand) IACParseStatus
 	String() string
+	Byte() byte
 }
 
 type NVTCommand interface {
-	Parse() IACParseStatus
 	String() string
+	Byte() byte
 }
 
 type nvtCmd byte
@@ -75,16 +75,17 @@ func (c nvtCmd) String() string {
 	return string(c)
 }
 
-func (c nvtCmd) Parse() IACParseStatus {
-	switch c {
-	case WILL, WONT, DO, DONT, SB:
-		return WANT_OPT
-
-	}
-
-	return WANT_NOTHING
+func (c nvtCmd) Byte() byte {
+	return byte(c)
 }
 
+func (c nvtCmd) ParseOption(o nvtOpt) IACParseStatus {
+	switch c {
+	case SB:
+		return WANT_DATA
+	}
+	return WANT_NOTHING
+}
 func (o nvtOpt) String() string {
 	optName := map[NVTOption]string{
 		O_TTYPE: "TTYPE",
@@ -104,19 +105,8 @@ func (o nvtOpt) String() string {
 
 	return string(o)
 }
-func (o nvtOpt) Parse(c NVTCommand) IACParseStatus {
-	switch o {
-	case O_ECHO:
-		return WANT_NOTHING
-	case O_TTYPE:
-		switch c {
-		case WILL, WONT, DO, DONT:
-			return WANT_NOTHING
-		case SB:
-			return WANT_SUBOPT
-		}
-	}
-	return WANT_NOTHING
+func (c nvtOpt) Byte() byte {
+	return byte(c)
 }
 
 const (
@@ -127,59 +117,123 @@ const (
 	WANT_NOTHING
 )
 
-type IACMessage struct {
-	status IACParseStatus
+type IACPacket struct {
+	bytes.Buffer
 	cmd    NVTCommand
 	opt    NVTOption
-	subopt NVTOption
-	data   bytes.Buffer
+	status IACParseStatus
 }
 
-func (c *IACMessage) Scan(b byte) bool {
+func (c *IACPacket) Bytes() []byte {
+	b := []byte{}
+	if c.cmd == nil {
+		return nil
+	}
+	b = append(b, c.cmd.Byte())
+	if c.opt == nil {
+		return b
+	}
+	b = append(b, c.opt.Byte())
+	if c.Len() <= 0 {
+		return b
+	}
+	b = append(b, c.Bytes()...)
+
+	return b
+}
+func (c *IACPacket) Scan(b byte) bool {
 	switch c.status {
 	case WANT_CMD:
+		//c.WriteByte(b)
 		c.cmd = nvtCmd(b)
-		c.status = c.cmd.Parse()
-		return c.status != WANT_NOTHING
+		switch c.cmd {
+		case WILL, WONT, DO, DONT, SB:
+			c.status = WANT_DATA
+		default:
+			c.status = WANT_NOTHING
+		}
 	case WANT_OPT:
+		//c.WriteByte(b)
 		c.opt = nvtOpt(b)
-		c.status = c.opt.Parse(c.cmd)
-		return c.status != WANT_NOTHING
-	case WANT_SUBOPT:
-		c.subopt = nvtOpt(b)
-		c.status = WANT_DATA
+		switch c.cmd {
+		case WILL, WONT, DO, DONT:
+			c.status = WANT_NOTHING
+		default:
+			c.status = WANT_DATA
+		}
 		return c.status != WANT_NOTHING
 	case WANT_DATA:
-		if SB == c.cmd && SE == nvtCmd(b) {
+		if SE == nvtCmd(b) {
 			return false
 		}
-		c.data.WriteByte(b)
+		c.WriteByte(b)
 	}
 
 	return true
 }
 
-func (c *IACMessage) String() string {
-	s := ""
+func (c *IACPacket) String() string {
+	s := "IAC "
 	if c.cmd == nil {
-		return s
+		return ""
 	}
-	s = "IAC " + c.cmd.String()
+	s = s + c.cmd.String()
 
 	if c.opt == nil {
 		return s
 	}
 	s = s + " " + c.opt.String()
 
-	if c.subopt == nil {
+	if c.Len() <= 0 {
 		return s
 	}
-	s = s + " " + c.subopt.String()
-
-	if c.data.Len() <= 0 {
-		return s
-	}
-	s = s + " " + fmt.Sprintf("%v", c.data)
+	s = s + " " + fmt.Sprintf("%v", c.Bytes())
 
 	return s
+}
+
+type NVTOptionConfig struct {
+	options map[nvtOpt]bool
+}
+
+func NewNVTOptionConfig() *NVTOptionConfig {
+	cfg := &NVTOptionConfig{
+		options: map[nvtOpt]bool{
+			O_ECHO:  true,
+			O_TTYPE: true,
+		},
+	}
+
+	return cfg
+}
+
+type NVTCommandHandler func(cfg *NVTOptionConfig, data *IACPacket) *IACPacket
+type NVTCommandHandlerMap map[NVTCommand]NVTCommandHandler
+type IACReactor struct {
+	config  *NVTOptionConfig
+	handler NVTCommandHandlerMap
+}
+
+func NewIACReactor(cfg *NVTOptionConfig) *IACReactor {
+	return &IACReactor{
+		config: cfg,
+		handler: NVTCommandHandlerMap{
+			WILL: handleNVTWill,
+		},
+	}
+}
+
+func (r *IACReactor) React(m *IACPacket) *IACPacket {
+	handler, ok := r.handler[m.cmd]
+	if !ok {
+		return nil
+	}
+	handler(r.config, m)
+
+	return nil
+}
+
+func handleNVTWill(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
+
+	return nil
 }

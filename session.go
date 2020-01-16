@@ -43,7 +43,7 @@ type Session struct {
 	closing bool
 
 	inBuffer    chan byte
-	iacInBuffer chan *IACMessage
+	iacInBuffer chan *IACPacket
 	outBuffer   chan []byte
 
 	closeTimer chan struct{}
@@ -62,7 +62,7 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 		out:         out,
 		conn:        conn,
 		inBuffer:    make(chan byte, 4096),
-		iacInBuffer: make(chan *IACMessage, 20),
+		iacInBuffer: make(chan *IACPacket, 20),
 		outBuffer:   make(chan []byte, 80),
 		closeTimer:  make(chan struct{}),
 	}
@@ -231,7 +231,7 @@ DONE:
 
 		// IAC
 		if b == byte(IAC) {
-			iac, e := readIACMessage(buf)
+			iac, e := readIACPacket(buf)
 			if e != nil {
 				break DONE
 			}
@@ -240,7 +240,7 @@ DONE:
 			continue
 		}
 
-		// ansi escape sequence
+		// escape sequence
 		if b == byte(0x1b) {
 			data, e := readEscSeq(buf)
 			if e != nil {
@@ -323,8 +323,9 @@ DONE:
 }
 
 // readIAC will read a complete NVT command from inbuffer
-func readIACMessage(r *bufio.Reader) (*IACMessage, error) {
-	iac := &IACMessage{}
+func readIACPacket(r *bufio.Reader) (*IACPacket, error) {
+	iac := &IACPacket{}
+	
 	var err error
 	var b byte
 	for {
@@ -332,6 +333,7 @@ func readIACMessage(r *bufio.Reader) (*IACMessage, error) {
 		if err != nil {
 			break
 		}
+
 		if false == iac.Scan(b) {
 			break
 		}
