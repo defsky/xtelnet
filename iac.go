@@ -2,6 +2,8 @@ package main
 
 import "bytes"
 
+import "fmt"
+
 type IACParseStatus int
 
 type NVTOption interface {
@@ -155,4 +157,29 @@ func (c *IACMessage) Scan(b byte) bool {
 	}
 
 	return true
+}
+
+func (c *IACMessage) String() string {
+	s := ""
+	if c.cmd == nil {
+		return s
+	}
+	s = "IAC " + c.cmd.String()
+
+	if c.opt == nil {
+		return s
+	}
+	s = s + " " + c.opt.String()
+
+	if c.subopt == nil {
+		return s
+	}
+	s = s + " " + c.subopt.String()
+
+	if c.data.Len() <= 0 {
+		return s
+	}
+	s = s + " " + fmt.Sprintf("%v", c.data)
+
+	return s
 }

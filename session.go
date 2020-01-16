@@ -165,7 +165,7 @@ DONE:
 				break DONE
 			}
 			buffer.WriteByte(b)
-		case b, ok := <-s.iacInBuffer:
+		case _, ok := <-s.iacInBuffer:
 			if !ok {
 				break DONE
 			}
@@ -236,7 +236,7 @@ DONE:
 				break DONE
 			}
 			s.iacInBuffer <- iac
-			writeBytes(s.inBuffer, []byte(fmt.Sprintf("IAC %v\n", cmd)))
+			writeBytes(s.inBuffer, []byte(iac.String()+"\n"))
 			continue
 		}
 
@@ -311,7 +311,7 @@ DONE:
 	for b, err = r.ReadByte(); err == nil; b, err = r.ReadByte() {
 		buf.WriteByte(b)
 
-		if b == byte('m') {
+		if b == byte('m') || b == byte('\n') {
 			break DONE
 		}
 	}
