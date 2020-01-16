@@ -1,14 +1,17 @@
 package main
 
-import "bytes"
-
-import "fmt"
+import (
+	"bytes"
+	"fmt"
+	"strconv"
+)
 
 type IACParseStatus int
 
 type NVTOption interface {
 	String() string
 	Byte() byte
+	Itoa() string
 }
 
 type NVTCommand interface {
@@ -46,11 +49,6 @@ const (
 	O_BINARY nvtOpt = 0   // 0x00	[RFC856]  Binary Transmission
 )
 
-const (
-	O_TTYPE_REQ nvtOpt = 1
-	O_TTYPE_ACK nvtOpt = 0
-)
-
 func (c nvtCmd) String() string {
 	cmdName := map[NVTCommand]string{
 		IAC:  "IAC",
@@ -79,13 +77,6 @@ func (c nvtCmd) Byte() byte {
 	return byte(c)
 }
 
-func (c nvtCmd) ParseOption(o nvtOpt) IACParseStatus {
-	switch c {
-	case SB:
-		return WANT_DATA
-	}
-	return WANT_NOTHING
-}
 func (o nvtOpt) String() string {
 	optName := map[NVTOption]string{
 		O_TTYPE: "TTYPE",
@@ -105,8 +96,11 @@ func (o nvtOpt) String() string {
 
 	return string(o)
 }
-func (c nvtOpt) Byte() byte {
-	return byte(c)
+func (o nvtOpt) Byte() byte {
+	return byte(o)
+}
+func (o nvtOpt) Itoa() string {
+	return strconv.Itoa(int(o))
 }
 
 const (
@@ -118,55 +112,64 @@ const (
 )
 
 type IACPacket struct {
-	bytes.Buffer
+	data   bytes.Buffer
 	cmd    NVTCommand
 	opt    NVTOption
 	status IACParseStatus
 }
 
 func (c *IACPacket) Bytes() []byte {
-	b := []byte{}
+	b := make([]byte, 0)
 	if c.cmd == nil {
 		return nil
 	}
 	b = append(b, c.cmd.Byte())
+
 	if c.opt == nil {
 		return b
 	}
 	b = append(b, c.opt.Byte())
-	if c.Len() <= 0 {
+
+	if c.data.Len() <= 0 {
 		return b
 	}
-	b = append(b, c.Bytes()...)
+	b = append(b, c.data.Bytes()...)
 
 	return b
 }
+
+// Scan will put b in packet, return false indicate not need any more byte
 func (c *IACPacket) Scan(b byte) bool {
+	// drop IAC
+	if b == byte(IAC) {
+		return true
+	}
 	switch c.status {
 	case WANT_CMD:
 		//c.WriteByte(b)
 		c.cmd = nvtCmd(b)
 		switch c.cmd {
 		case WILL, WONT, DO, DONT, SB:
-			c.status = WANT_DATA
+			c.status = WANT_OPT
 		default:
 			c.status = WANT_NOTHING
 		}
+		return c.status != WANT_NOTHING
 	case WANT_OPT:
 		//c.WriteByte(b)
 		c.opt = nvtOpt(b)
 		switch c.cmd {
-		case WILL, WONT, DO, DONT:
-			c.status = WANT_NOTHING
-		default:
+		case SB:
 			c.status = WANT_DATA
+		default:
+			c.status = WANT_NOTHING
 		}
 		return c.status != WANT_NOTHING
 	case WANT_DATA:
 		if SE == nvtCmd(b) {
 			return false
 		}
-		c.WriteByte(b)
+		c.data.WriteByte(b)
 	}
 
 	return true
@@ -184,21 +187,21 @@ func (c *IACPacket) String() string {
 	}
 	s = s + " " + c.opt.String()
 
-	if c.Len() <= 0 {
+	if c.data.Len() <= 0 {
 		return s
 	}
-	s = s + " " + fmt.Sprintf("%v", c.Bytes())
+	s = s + " " + fmt.Sprintf("%v", c.data.Bytes())
 
 	return s
 }
 
 type NVTOptionConfig struct {
-	options map[nvtOpt]bool
+	options map[NVTOption]bool
 }
 
 func NewNVTOptionConfig() *NVTOptionConfig {
 	cfg := &NVTOptionConfig{
-		options: map[nvtOpt]bool{
+		options: map[NVTOption]bool{
 			O_ECHO:  true,
 			O_TTYPE: true,
 		},
@@ -219,6 +222,10 @@ func NewIACReactor(cfg *NVTOptionConfig) *IACReactor {
 		config: cfg,
 		handler: NVTCommandHandlerMap{
 			WILL: handleNVTWill,
+			WONT: handleNVTWont,
+			DO:   handleNVTDo,
+			DONT: handleNVTDont,
+			SB:   handleNVTSb,
 		},
 	}
 }
@@ -228,12 +235,50 @@ func (r *IACReactor) React(m *IACPacket) *IACPacket {
 	if !ok {
 		return nil
 	}
-	handler(r.config, m)
-
-	return nil
+	return handler(r.config, m)
 }
 
 func handleNVTWill(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
+	if cfg.options[p.opt] {
+		p.cmd = DO
+	} else {
+		p.cmd = DONT
+	}
+	return p
+}
+func handleNVTWont(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
+	p.cmd = DONT
+	return p
+}
+func handleNVTDo(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
+	if cfg.options[p.opt] {
+		p.cmd = WILL
+	} else {
+		p.cmd = DONT
+	}
+	return p
+}
+func handleNVTDont(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
+	p.cmd = WONT
+	return p
+}
+func handleNVTSb(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
+	switch p.opt {
+	case O_TTYPE:
+		subopt, err := p.data.ReadByte()
+		if err != nil || subopt != 1 {
+			return nil
+		}
+		p.data.Reset()
+
+		buf := []byte{0}
+		buf = append(buf, []byte("xtelnet")...)
+		buf = append(buf, []byte{byte(IAC), byte(SE)}...)
+
+		p.data.Write(buf)
+
+		return p
+	}
 
 	return nil
 }

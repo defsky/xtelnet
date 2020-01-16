@@ -20,6 +20,7 @@ var UserShell = &Shell{}
 
 func main() {
 	//screen.SetBackgroundColor(tcell.ColorDefault)
+	screen.SetText("[green::b]Welcome to xtelnet!\n\n[yellow::b]Type /<Enter> for help\n\n")
 
 	hostCell := tview.NewTableCell("No active connection").
 		SetMaxWidth(40).

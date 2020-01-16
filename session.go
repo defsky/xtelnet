@@ -165,11 +165,6 @@ DONE:
 				break DONE
 			}
 			buffer.WriteByte(b)
-		case _, ok := <-s.iacInBuffer:
-			if !ok {
-				break DONE
-			}
-
 		default:
 			if buffer.Len() > 0 {
 				msg := DecodeFrom("GB18030", buffer.Bytes())
@@ -186,6 +181,8 @@ DONE:
 					break
 				}
 			}
+
+			// wait new incoming data
 			b2, ok := <-s.inBuffer
 			if !ok {
 				break DONE
@@ -206,11 +203,29 @@ DONE:
 }
 
 func (s *Session) iacprocessor() {
+	defer s.wg.Done()
 
+	cfg := NewNVTOptionConfig()
+	reactor := NewIACReactor(cfg)
+DONE:
+	for {
+		select {
+		case pkt, ok := <-s.iacInBuffer:
+			if !ok {
+				break DONE
+			}
+			resp := reactor.React(pkt)
+			if resp != nil {
+				s.outBuffer <- append([]byte{IAC.Byte()}, resp.Bytes()...)
+			}
+		}
+	}
 }
+
 func (s *Session) receiver() {
 	defer func() {
 		close(s.inBuffer)
+		close(s.iacInBuffer)
 		s.wg.Done()
 	}()
 
@@ -219,7 +234,8 @@ func (s *Session) receiver() {
 	var b byte
 	var err error
 
-	s.wg.Add(1)
+	s.wg.Add(2)
+	go s.iacprocessor()
 	go s.preprocessor()
 
 DONE:
@@ -231,12 +247,21 @@ DONE:
 
 		// IAC
 		if b == byte(IAC) {
-			iac, e := readIACPacket(buf)
-			if e != nil {
+			pkt := &IACPacket{}
+			for b, err = buf.ReadByte(); err == nil; {
+				if false == pkt.Scan(b) {
+					break
+				}
+				b, err = buf.ReadByte()
+			}
+
+			if err != nil {
 				break DONE
 			}
-			s.iacInBuffer <- iac
-			writeBytes(s.inBuffer, []byte(iac.String()+"\n"))
+
+			s.iacInBuffer <- pkt
+			writeBytes(s.inBuffer, []byte(pkt.String()+"\r\n"))
+
 			continue
 		}
 
@@ -244,6 +269,7 @@ DONE:
 		if b == byte(0x1b) {
 			data, e := readEscSeq(buf)
 			if e != nil {
+				err = e
 				break DONE
 			}
 			s.inBuffer <- b
@@ -270,7 +296,10 @@ DONE:
 			s.conn.Close()
 			break DONE
 		}
-		data = EncodeTo("GB18030", data)
+
+		if data[0] != byte(IAC) {
+			data = EncodeTo("GB18030", data)
+		}
 
 		_, err := writer.Write(data)
 		if err != nil {
@@ -325,7 +354,7 @@ DONE:
 // readIAC will read a complete NVT command from inbuffer
 func readIACPacket(r *bufio.Reader) (*IACPacket, error) {
 	iac := &IACPacket{}
-	
+
 	var err error
 	var b byte
 	for {
