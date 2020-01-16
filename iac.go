@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"strconv"
 )
 
 type IACParseStatus int
@@ -11,7 +10,6 @@ type IACParseStatus int
 type NVTOption interface {
 	String() string
 	Byte() byte
-	Itoa() string
 }
 
 type NVTCommand interface {
@@ -98,9 +96,6 @@ func (o nvtOpt) String() string {
 }
 func (o nvtOpt) Byte() byte {
 	return byte(o)
-}
-func (o nvtOpt) Itoa() string {
-	return strconv.Itoa(int(o))
 }
 
 const (
