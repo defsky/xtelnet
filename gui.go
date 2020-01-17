@@ -64,22 +64,4 @@ func init() {
 		}
 	})
 
-	app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
-		key := e.Key()
-		switch key {
-		case tcell.KeyCtrlD:
-			if sess := UserShell.GetSession(); sess != nil {
-				sess.Close()
-				UserShell.SetSession(nil)
-			} else {
-				fmt.Fprintln(screen, "No session, Use /open <host> <port> to open one")
-			}
-		case tcell.KeyCtrlC:
-			if sess := UserShell.GetSession(); sess != nil {
-				sess.Close()
-			}
-		}
-		return e
-	})
-
 }

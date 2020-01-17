@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/gdamore/tcell"
 	"io"
 	"sort"
 	"strconv"
@@ -60,7 +61,7 @@ var commands = CommandMap{
 		name:       "/close",
 		handler:    handleCmdClose,
 		subCommand: nil,
-		desc:       "Close a session",
+		desc:       "Close a session, equivalent to Ctrl-d",
 		help:       "\tUsage: /close",
 	},
 	"debug": &Command{
@@ -70,8 +71,19 @@ var commands = CommandMap{
 		desc:       "Switches for debug",
 		help:       "\tUsage: /debug",
 	},
+	"quit": &Command{
+		name:       "/quit",
+		handler:    handleCmdQuit,
+		subCommand: nil,
+		desc:       "Quit this terminal, equivalent to Ctrl-c",
+		help:       "\tUsage: /quit",
+	},
 }
 
+func handleCmdQuit(c *Command, p *bufio.Reader) (string, []byte, error) {
+	app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
+	return "", nil, nil
+}
 func handleCmdDebugColor(c *Command, p *bufio.Reader) (string, []byte, error) {
 	if sess := UserShell.GetSession(); sess != nil {
 
