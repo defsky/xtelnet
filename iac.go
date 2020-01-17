@@ -107,7 +107,7 @@ const (
 )
 
 type IACPacket struct {
-	data   bytes.Buffer
+	bytes.Buffer
 	cmd    NVTCommand
 	opt    NVTOption
 	status IACParseStatus
@@ -125,10 +125,10 @@ func (c *IACPacket) Bytes() []byte {
 	}
 	b = append(b, c.opt.Byte())
 
-	if c.data.Len() <= 0 {
+	if c.Len() <= 0 {
 		return b
 	}
-	b = append(b, c.data.Bytes()...)
+	b = append(b, c.Buffer.Bytes()...)
 
 	return b
 }
@@ -164,7 +164,7 @@ func (c *IACPacket) Scan(b byte) bool {
 		if SE == nvtCmd(b) {
 			return false
 		}
-		c.data.WriteByte(b)
+		c.WriteByte(b)
 	}
 
 	return true
@@ -182,10 +182,10 @@ func (c *IACPacket) String() string {
 	}
 	s = s + " " + c.opt.String()
 
-	if c.data.Len() <= 0 {
+	if c.Len() <= 0 {
 		return s
 	}
-	s = s + " " + fmt.Sprintf("%v", c.data.Bytes())
+	s = s + " " + fmt.Sprintf("%v", c.Buffer.Bytes())
 
 	return s
 }
@@ -260,17 +260,17 @@ func handleNVTDont(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
 func handleNVTSb(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
 	switch p.opt {
 	case O_TTYPE:
-		subopt, err := p.data.ReadByte()
+		subopt, err := p.ReadByte()
 		if err != nil || subopt != 1 {
 			return nil
 		}
-		p.data.Reset()
+		p.Reset()
 
 		buf := []byte{0}
 		buf = append(buf, []byte("xtelnet")...)
 		buf = append(buf, []byte{byte(IAC), byte(SE)}...)
 
-		p.data.Write(buf)
+		p.Write(buf)
 
 		return p
 	}

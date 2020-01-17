@@ -43,7 +43,7 @@ type Session struct {
 	closing bool
 
 	inBuffer    chan byte
-	iacInBuffer chan *IACPacket
+	iacInBuffer chan DataPacket
 	outBuffer   chan []byte
 
 	closeTimer chan struct{}
@@ -62,7 +62,7 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 		out:         out,
 		conn:        conn,
 		inBuffer:    make(chan byte, 4096),
-		iacInBuffer: make(chan *IACPacket, 20),
+		iacInBuffer: make(chan DataPacket, 20),
 		outBuffer:   make(chan []byte, 80),
 		closeTimer:  make(chan struct{}),
 	}
@@ -210,9 +210,13 @@ func (s *Session) iacprocessor() {
 DONE:
 	for {
 		select {
-		case pkt, ok := <-s.iacInBuffer:
+		case p, ok := <-s.iacInBuffer:
 			if !ok {
 				break DONE
+			}
+			pkt, ok := p.(*IACPacket)
+			if !ok {
+				break
 			}
 			resp := reactor.React(pkt)
 			if resp != nil {
