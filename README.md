@@ -1,7 +1,7 @@
 # xTelnet
 eXtensible telnet client
 
-# Usage
+# Quick Start
 ```
 git clone https://github.com/defsky/xtelnet.git
 git submodule init
