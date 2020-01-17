@@ -10,6 +10,8 @@ type Shell struct {
 	session *Session
 }
 
+var UserShell = &Shell{}
+
 func (s *Shell) Exec(cmd string) (string, error) {
 	if len(cmd) <= 0 || cmd[0] != '/' {
 		s.SendData([]byte(cmd + "\r\n"))
@@ -26,6 +28,11 @@ func (s *Shell) Exec(cmd string) (string, error) {
 
 func (s *Shell) SetSession(sess *Session) {
 	s.session = sess
+	if sess == nil {
+		statusBar.GetCell(0, 0).SetText("No active session")
+	} else {
+		statusBar.GetCell(0, 0).SetText(s.session.host)
+	}
 }
 
 func (s *Shell) SendData(data []byte) {
@@ -42,4 +49,8 @@ func (s *Shell) SendData(data []byte) {
 
 func (s *Shell) GetSession() *Session {
 	return s.session
+}
+
+func ini() {
+	UserShell.SetSession(nil)
 }

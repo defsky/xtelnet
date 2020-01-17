@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -176,8 +177,13 @@ func (c *Command) Exec(p *bufio.Reader) (string, []byte, error) {
 
 func subCmdDesc(c *Command) string {
 	msg := c.desc + ":\n"
-	for _, v := range c.subCommand {
-		msg = msg + fmt.Sprintf("\t%-10s%-50s\n", v.name, v.desc)
+	cmdNames := []string{}
+	for n, _ := range c.subCommand {
+		cmdNames = append(cmdNames, n)
+	}
+	sort.Strings(cmdNames)
+	for _, name := range cmdNames {
+		msg = msg + fmt.Sprintf("\t%-10s%-50s\n", c.subCommand[name].name, c.subCommand[name].desc)
 	}
 	strings.TrimRight(msg, "\r\n ")
 	return msg
