@@ -10,7 +10,13 @@ type Shell struct {
 	session *Session
 }
 
-var UserShell = &Shell{}
+var UserShell = NewShell()
+
+func NewShell() *Shell {
+	s := &Shell{}
+	s.SetSession(nil)
+	return s
+}
 
 func (s *Shell) Exec(cmd string) (string, error) {
 	if len(cmd) <= 0 || cmd[0] != '/' {
@@ -49,8 +55,4 @@ func (s *Shell) SendData(data []byte) {
 
 func (s *Shell) GetSession() *Session {
 	return s.session
-}
-
-func ini() {
-	UserShell.SetSession(nil)
 }
