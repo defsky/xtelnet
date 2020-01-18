@@ -37,6 +37,14 @@ var layout = tview.NewFlex().SetDirection(tview.FlexRow).
 
 func init() {
 	screen.SetText("[green::b]Welcome to xtelnet!\n\n[yellow::b]Type /<Enter> for help\n\n")
+	screen.SetDrawFunc(func(scr tcell.Screen, x int, y int, width int, height int) (int, int, int, int) {
+		if width < 110 {
+			screen.SetWrap(false)
+		} else {
+			screen.SetWrap(true)
+		}
+		return x, y, width, height
+	})
 
 	statusBar.SetBackgroundColor(tcell.ColorDarkGray)
 
