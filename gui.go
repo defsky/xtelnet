@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -38,67 +39,77 @@ var layout = tview.NewFlex().SetDirection(tview.FlexRow).
 // 	AddItem(statusBar, 1, 0, 1, 1, 1, 30, false).
 // 	AddItem(inputBox, 2, 0, 1, 1, 1, 30, true)
 
-const historyCmdListLength = 1000
+const historyCmdLength = 1000
 
-type HistoryCmdList struct {
+type HistoryCmd struct {
+	sync.Mutex
+	Scrolling        bool
 	history          *list.List
 	matchs           *list.List
-	length           int
+	maxLen           int
 	currentInputText string
 	lastInputText    string
 	currentMatch     *list.Element
 }
 
-func NewHistoryCmdList(len int) *HistoryCmdList {
+func NewHistoryCmd(len int) *HistoryCmd {
 
-	return &HistoryCmdList{
-		length:  historyCmdListLength,
+	return &HistoryCmd{
+		maxLen:  historyCmdLength,
 		history: list.New(),
 		matchs:  list.New(),
 	}
 }
-func (l *HistoryCmdList) SetCurrentText(text string) {
+func (l *HistoryCmd) SetCurrentText(text string) {
+	l.Lock()
+	defer l.Unlock()
 	l.currentInputText = text
 }
-func (l *HistoryCmdList) NextMatch() string {
-	if l.currentInputText != l.lastInputText {
-		l.match(l.currentInputText)
-		l.currentMatch = l.matchs.Front()
-	}
-	if len(l.currentInputText) == 0 {
-		l.matchs = l.history
-		l.currentMatch = l.matchs.Front()
-	}
-	if l.matchs.Len() > 0 {
+
+func (l *HistoryCmd) NextMatch(key tcell.Key) string {
+	l.Lock()
+	defer l.Unlock()
+
+	l.match()
+	if l.currentMatch != nil {
 		s := l.currentMatch.Value.(string)
-		l.currentMatch = l.currentMatch.Next()
+		switch key {
+		case tcell.KeyUp:
+			if n := l.currentMatch.Next(); n != nil {
+				l.currentMatch = n
+			}
+		case tcell.KeyDown:
+			if p := l.currentMatch.Prev(); p != nil {
+				l.currentMatch = p
+			}
+		}
 		return s
 	}
 	return ""
 }
-func (l *HistoryCmdList) PrevMatch() string {
-	if l.currentInputText != l.lastInputText {
-		l.match(l.currentInputText)
-	}
-	if len(l.currentInputText) == 0 {
-		l.matchs = l.history
-		l.currentMatch = l.matchs.Front()
-	}
-	if l.matchs.Len() > 0 {
-		s := l.currentMatch.Value.(string)
-		l.currentMatch = l.currentMatch.Prev()
-		return s
-	}
-	return ""
+
+func (l *HistoryCmd) setAllMatch() {
+	l.matchs.PushBackList(l.history)
+	l.currentMatch = l.matchs.Front()
 }
-func (l *HistoryCmdList) match(text string) {
+func (l *HistoryCmd) match() {
+	if l.currentInputText == l.lastInputText {
+		if l.matchs.Len() > 0 {
+			return
+		}
+		l.setAllMatch()
+	}
 	l.matchs.Init()
 	l.currentMatch = nil
-	l.currentInputText = text
+	l.lastInputText = l.currentInputText
+	if l.currentInputText == "" {
+		l.setAllMatch()
+		return
+	}
 	for e := l.history.Front(); e != nil; e.Next() {
 		s := e.Value.(string)
-		if strings.HasPrefix(strings.ToLower(s), strings.ToLower(text)) {
-			l.matchs.PushFront(e)
+		if strings.HasPrefix(strings.ToLower(s), strings.ToLower(l.currentInputText)) {
+			l.matchs.PushBack(e.Value)
 		}
 	}
 	if l.matchs.Len() > 0 {
@@ -107,25 +118,26 @@ func (l *HistoryCmdList) match(text string) {
 }
 
 // Add text into history record
-func (l *HistoryCmdList) Add(text string) {
+func (l *HistoryCmd) Add(text string) {
+	l.Lock()
+	defer l.Unlock()
+
 	// if exists, move to front
 	for e := l.history.Front(); e != nil; e.Next() {
-		s := e.Value.(string)
-		if s == text {
+		if e.Value.(string) == text {
 			l.history.MoveToFront(e)
+			return
 		}
-		return
 	}
 
 	// add new record
-	if l.history.Len() > l.length {
-		lastElement := l.history.Back()
-		l.history.Remove(lastElement)
+	if l.history.Len() >= l.maxLen {
+		l.history.Remove(l.history.Back())
 	}
 	l.history.PushFront(text)
 }
 
-var historyCmdList = NewHistoryCmdList(historyCmdListLength)
+var historyCmd = NewHistoryCmd(historyCmdLength)
 
 func init() {
 	screen.SetText("[green::b]Welcome to xtelnet!\n\n[yellow::b]Type /<Enter> for help\n\n")
@@ -146,7 +158,7 @@ func init() {
 		case tcell.KeyEnter:
 			cmdstr := inputBox.GetText()
 			inputBox.SetText("")
-			historyCmdList.Add(cmdstr)
+			historyCmd.Add(cmdstr)
 			msg, err := UserShell.Exec(cmdstr)
 			if err != nil {
 				app.QueueUpdate(func() {
@@ -160,8 +172,6 @@ func init() {
 			}
 		case tcell.KeyEsc:
 			inputBox.SetText("")
-		case tcell.KeyUp:
-		case tcell.KeyDown:
 		case tcell.KeyTab, tcell.KeyBacktab:
 		}
 	})
@@ -185,28 +195,28 @@ func init() {
 		}
 		return
 	})
-	inputBox.SetChangedFunc(updateHist)
+
 	inputBox.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
-		switch e.Key() {
-		case tcell.KeyUp:
-			s := historyCmdList.NextMatch()
-			if len(s) > 0 {
-				inputBox.SetChangedFunc(nil)
-				inputBox.SetText(s)
-				inputBox.SetChangedFunc(updateHist)
+		key := e.Key()
+
+		historyCmd.Lock()
+		defer historyCmd.Unlock()
+		switch key {
+		case tcell.KeyUp, tcell.KeyDown:
+			if !historyCmd.Scrolling {
+				historyCmd.Scrolling = true
+				historyCmd.SetCurrentText(inputBox.GetText())
 			}
-		case tcell.KeyDown:
-			s := historyCmdList.PrevMatch()
+			s := historyCmd.NextMatch(key)
 			if len(s) > 0 {
-				inputBox.SetChangedFunc(nil)
 				inputBox.SetText(s)
-				inputBox.SetChangedFunc(updateHist)
+			}
+		default:
+			if historyCmd.Scrolling {
+				historyCmd.Scrolling = false
 			}
 		}
+
 		return e
 	})
-}
-
-func updateHist(text string) {
-	historyCmdList.SetCurrentText(text)
 }
