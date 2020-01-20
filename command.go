@@ -39,21 +39,30 @@ var debugSubCommands = CommandMap{
 		handler:    handleCmdDebugColor,
 		subCommand: nil,
 		desc:       "switch color debug",
-		help:       "\tUsage /debug color",
+		help:       "\tUsage: /debug color",
 	},
 	"ansicolor": &Command{
 		name:       "ansicolor",
 		handler:    handleCmdDebugAnsiColor,
 		subCommand: nil,
 		desc:       "switch ansi color debug",
-		help:       "\tUsage /debug ansicolor",
+		help:       "\tUsage: /debug ansicolor",
 	},
 	"iac": &Command{
 		name:       "iac",
 		handler:    handleCmdDebugIAC,
 		subCommand: nil,
 		desc:       "switch iac debug",
-		help:       "\tUsage /debug iac",
+		help:       "\tUsage: /debug iac",
+	},
+}
+var setSubCommands = CommandMap{
+	"GA": &Command{
+		name:       "GA",
+		handler:    handleCmdSetGA,
+		subCommand: nil,
+		desc:       "switch GA visibility",
+		help:       "\t Usage: /set GA",
 	},
 }
 var commands = CommandMap{
@@ -75,8 +84,15 @@ var commands = CommandMap{
 		name:       "/debug",
 		handler:    nil,
 		subCommand: debugSubCommands,
-		desc:       "Switches for debug",
+		desc:       "debug switches",
 		help:       "\tUsage: /debug",
+	},
+	"set": &Command{
+		name:       "/set",
+		handler:    nil,
+		subCommand: setSubCommands,
+		desc:       "subcommands for setting",
+		help:       "\tUsage: /set",
 	},
 	"quit": &Command{
 		name:       "/quit",
@@ -91,6 +107,20 @@ func handleCmdQuit(c *Command, p *bufio.Reader) (string, []byte, error) {
 	app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
 	return "", nil, nil
 }
+func handleCmdSetGA(c *Command, p *bufio.Reader) (string, []byte, error) {
+	if sess := UserShell.GetSession(); sess != nil {
+
+		gaVisible := !sess.Option.GAVisible
+		sess.Option.GAVisible = gaVisible
+		if gaVisible {
+			return "GA visible on", nil, nil
+		} else {
+			return "GA visible off", nil, nil
+		}
+	}
+	return "No active session", nil, nil
+}
+
 func handleCmdDebugIAC(c *Command, p *bufio.Reader) (string, []byte, error) {
 	if sess := UserShell.GetSession(); sess != nil {
 

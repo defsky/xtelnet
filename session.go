@@ -32,6 +32,7 @@ type SessionOption struct {
 	DebugColor     bool
 	DebugAnsiColor bool
 	DebugIAC       bool
+	GAVisible      bool
 	NVTOptionCfg   *NVTOptionConfig
 }
 
@@ -267,6 +268,11 @@ DONE:
 			s.iacInBuffer <- pkt
 			if s.Option.DebugIAC {
 				writeBytes(s.inBuffer, []byte(pkt.String()+"\r\n"))
+			}
+			if s.Option.GAVisible {
+				if pkt.cmd == GA {
+					writeBytes(s.inBuffer, []byte("\r\n<IAC GA>\r\n"))
+				}
 			}
 
 			continue
