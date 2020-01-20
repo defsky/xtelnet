@@ -31,7 +31,7 @@ type TickTaskMap map[time.Duration][]ScheduleTask
 type SessionOption struct {
 	DebugColor     bool
 	DebugAnsiColor bool
-	ServerEcho     bool
+	DebugIAC       bool
 	NVTOptionCfg   *NVTOptionConfig
 }
 
@@ -265,7 +265,9 @@ DONE:
 			}
 
 			s.iacInBuffer <- pkt
-			writeBytes(s.inBuffer, []byte(pkt.String()+"\r\n"))
+			if s.Option.DebugIAC {
+				writeBytes(s.inBuffer, []byte(pkt.String()+"\r\n"))
+			}
 
 			continue
 		}

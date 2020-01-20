@@ -48,6 +48,13 @@ var debugSubCommands = CommandMap{
 		desc:       "switch ansi color debug",
 		help:       "\tUsage /debug ansicolor",
 	},
+	"iac": &Command{
+		name:       "iac",
+		handler:    handleCmdDebugIAC,
+		subCommand: nil,
+		desc:       "switch iac debug",
+		help:       "\tUsage /debug iac",
+	},
 }
 var commands = CommandMap{
 	"open": &Command{
@@ -84,6 +91,20 @@ func handleCmdQuit(c *Command, p *bufio.Reader) (string, []byte, error) {
 	app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
 	return "", nil, nil
 }
+func handleCmdDebugIAC(c *Command, p *bufio.Reader) (string, []byte, error) {
+	if sess := UserShell.GetSession(); sess != nil {
+
+		iacDebug := !sess.Option.DebugIAC
+		sess.Option.DebugIAC = iacDebug
+		if iacDebug {
+			return "IAC debug opened", nil, nil
+		} else {
+			return "IAC debug closed", nil, nil
+		}
+	}
+	return "No active session", nil, nil
+}
+
 func handleCmdDebugColor(c *Command, p *bufio.Reader) (string, []byte, error) {
 	if sess := UserShell.GetSession(); sess != nil {
 
