@@ -1,11 +1,9 @@
 package main
 
 import (
-	"container/list"
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -38,104 +36,6 @@ var layout = tview.NewFlex().SetDirection(tview.FlexRow).
 // 	AddItem(screen, 0, 0, 1, 1, 1, 30, false).
 // 	AddItem(statusBar, 1, 0, 1, 1, 1, 30, false).
 // 	AddItem(inputBox, 2, 0, 1, 1, 1, 30, true)
-
-const historyCmdLength = 1000
-
-type HistoryCmd struct {
-	sync.Mutex
-	Scrolling        bool
-	history          *list.List
-	matchs           *list.List
-	maxLen           int
-	currentInputText string
-	lastInputText    string
-	currentMatch     *list.Element
-}
-
-func NewHistoryCmd(len int) *HistoryCmd {
-
-	return &HistoryCmd{
-		maxLen:  historyCmdLength,
-		history: list.New(),
-		matchs:  list.New(),
-	}
-}
-func (l *HistoryCmd) SetCurrentText(text string) {
-	l.Lock()
-	defer l.Unlock()
-	l.currentInputText = text
-}
-
-func (l *HistoryCmd) NextMatch(key tcell.Key) string {
-	l.Lock()
-	defer l.Unlock()
-
-	l.match()
-	if l.currentMatch != nil {
-		s := l.currentMatch.Value.(string)
-		switch key {
-		case tcell.KeyUp:
-			if n := l.currentMatch.Next(); n != nil {
-				l.currentMatch = n
-			}
-		case tcell.KeyDown:
-			if p := l.currentMatch.Prev(); p != nil {
-				l.currentMatch = p
-			}
-		}
-		return s
-	}
-	return ""
-}
-
-func (l *HistoryCmd) setAllMatch() {
-	l.matchs.PushBackList(l.history)
-	l.currentMatch = l.matchs.Front()
-}
-func (l *HistoryCmd) match() {
-	if l.currentInputText == l.lastInputText {
-		if l.matchs.Len() > 0 {
-			return
-		}
-		l.setAllMatch()
-	}
-	l.matchs.Init()
-	l.currentMatch = nil
-	l.lastInputText = l.currentInputText
-	if l.currentInputText == "" {
-		l.setAllMatch()
-		return
-	}
-	for e := l.history.Front(); e != nil; e.Next() {
-		s := e.Value.(string)
-		if strings.HasPrefix(strings.ToLower(s), strings.ToLower(l.currentInputText)) {
-			l.matchs.PushBack(e.Value)
-		}
-	}
-	if l.matchs.Len() > 0 {
-		l.currentMatch = l.matchs.Front()
-	}
-}
-
-// Add text into history record
-func (l *HistoryCmd) Add(text string) {
-	l.Lock()
-	defer l.Unlock()
-
-	// if exists, move to front
-	for e := l.history.Front(); e != nil; e.Next() {
-		if e.Value.(string) == text {
-			l.history.MoveToFront(e)
-			return
-		}
-	}
-
-	// add new record
-	if l.history.Len() >= l.maxLen {
-		l.history.Remove(l.history.Back())
-	}
-	l.history.PushFront(text)
-}
 
 var historyCmd = NewHistoryCmd(historyCmdLength)
 
@@ -199,21 +99,20 @@ func init() {
 	inputBox.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		key := e.Key()
 
-		historyCmd.Lock()
-		defer historyCmd.Unlock()
 		switch key {
 		case tcell.KeyUp, tcell.KeyDown:
-			if !historyCmd.Scrolling {
-				historyCmd.Scrolling = true
+			if !historyCmd.IsScrolling() {
+				historyCmd.SetScrolling(true)
 				historyCmd.SetCurrentText(inputBox.GetText())
+				historyCmd.Match()
 			}
 			s := historyCmd.NextMatch(key)
 			if len(s) > 0 {
 				inputBox.SetText(s)
 			}
 		default:
-			if historyCmd.Scrolling {
-				historyCmd.Scrolling = false
+			if historyCmd.IsScrolling() {
+				historyCmd.SetScrolling(false)
 			}
 		}
 
