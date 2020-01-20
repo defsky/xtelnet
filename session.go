@@ -31,6 +31,8 @@ type TickTaskMap map[time.Duration][]ScheduleTask
 type SessionOption struct {
 	DebugColor     bool
 	DebugAnsiColor bool
+	ServerEcho     bool
+	NVTOptionCfg   *NVTOptionConfig
 }
 
 // Session is a telnet session based on net.Conn
@@ -57,7 +59,9 @@ func NewSession(host string, out io.Writer) (*Session, error) {
 	}
 
 	sess := &Session{
-		Option:      &SessionOption{},
+		Option: &SessionOption{
+			NVTOptionCfg: NewNVTOptionConfig(),
+		},
 		host:        host,
 		out:         out,
 		conn:        conn,
@@ -97,7 +101,9 @@ func (s *Session) Send(data []byte) bool {
 	if s.closing {
 		return false
 	}
-	fmt.Fprint(s.out, string(data))
+	if false == s.Option.NVTOptionCfg.GetRemote(O_ECHO) {
+		fmt.Fprint(s.out, string(data))
+	}
 	s.outBuffer <- data
 
 	return true
@@ -205,8 +211,7 @@ DONE:
 func (s *Session) iacprocessor() {
 	defer s.wg.Done()
 
-	cfg := NewNVTOptionConfig()
-	reactor := NewIACReactor(cfg)
+	reactor := NewIACReactor(s.Option.NVTOptionCfg)
 DONE:
 	for {
 		select {

@@ -191,7 +191,8 @@ func (c *IACPacket) String() string {
 }
 
 type NVTOptionConfig struct {
-	options map[NVTOption]bool
+	options   map[NVTOption]bool
+	serverOpt map[NVTOption]bool
 }
 
 func NewNVTOptionConfig() *NVTOptionConfig {
@@ -200,9 +201,21 @@ func NewNVTOptionConfig() *NVTOptionConfig {
 			O_ECHO:  true,
 			O_TTYPE: true,
 		},
+		serverOpt: map[NVTOption]bool{},
 	}
 
 	return cfg
+}
+
+func (c *NVTOptionConfig) Get(o NVTOption) bool {
+	return c.options[o]
+}
+func (c *NVTOptionConfig) Set(o NVTOption, v bool) {
+	c.options[o] = v
+}
+
+func (c *NVTOptionConfig) GetRemote(o NVTOption) bool {
+	return c.serverOpt[o]
 }
 
 type NVTCommandHandler func(cfg *NVTOptionConfig, data *IACPacket) *IACPacket
@@ -234,19 +247,22 @@ func (r *IACReactor) React(m *IACPacket) *IACPacket {
 }
 
 func handleNVTWill(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
-	if cfg.options[p.opt] {
+	if cfg.Get(p.opt) {
 		p.cmd = DO
+		cfg.serverOpt[p.opt] = true
 	} else {
 		p.cmd = DONT
+		cfg.serverOpt[p.opt] = false
 	}
 	return p
 }
 func handleNVTWont(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
 	p.cmd = DONT
+	cfg.serverOpt[p.opt] = false
 	return p
 }
 func handleNVTDo(cfg *NVTOptionConfig, p *IACPacket) *IACPacket {
-	if cfg.options[p.opt] {
+	if cfg.Get(p.opt) {
 		p.cmd = WILL
 	} else {
 		p.cmd = DONT
