@@ -74,14 +74,13 @@ func (l *HistoryCmd) Match() {
 		l.currentMatch = l.matchs.Front()
 		return
 	}
+
+	l.history.PushFront(l.currentInputText)
 	for e := l.history.Front(); e != nil; e = e.Next() {
 		s := e.Value.(string)
 		if strings.HasPrefix(strings.ToLower(s), strings.ToLower(l.currentInputText)) {
 			l.matchs.PushBack(e.Value)
 		}
-	}
-	if l.matchs.Len() > 0 {
-		l.matchs.PushFront("")
 	}
 
 	l.currentMatch = l.matchs.Front()
