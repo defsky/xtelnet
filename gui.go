@@ -32,14 +32,13 @@ var layout = tview.NewFlex().SetDirection(tview.FlexRow).
 	AddItem(statusBar, 1, 1, false).
 	AddItem(inputBox, 1, 1, true)
 
-// var layout = tview.NewGrid().SetRows(0, 1, 1).SetColumns(0).
-// 	AddItem(screen, 0, 0, 1, 1, 1, 30, false).
-// 	AddItem(statusBar, 1, 0, 1, 1, 1, 30, false).
-// 	AddItem(inputBox, 2, 0, 1, 1, 1, 30, true)
+const historyCmdLength = 1000
 
 var historyCmd = NewHistoryCmd(historyCmdLength)
 
 func init() {
+	historyCmd.LoadCache()
+
 	screen.SetText("[green::b]Welcome to xtelnet!\n\n[yellow::b]Type /<Enter> for help\n\n")
 	screen.SetDrawFunc(func(scr tcell.Screen, x int, y int, width int, height int) (int, int, int, int) {
 		if width < 110 {
@@ -108,6 +107,7 @@ func init() {
 			}
 			s := historyCmd.NextMatch(key)
 			if len(s) > 0 {
+				s = strings.Trim(s, " ")
 				inputBox.SetText(s)
 			}
 		default:

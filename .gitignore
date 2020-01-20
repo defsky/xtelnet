@@ -2,5 +2,6 @@ telnet*
 go-runewidth*
 Thumbs*
 *.tmp
+.history
 
 xtelnet

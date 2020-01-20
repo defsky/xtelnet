@@ -11,6 +11,8 @@ import (
 var app = tview.NewApplication()
 
 func main() {
+	defer historyCmd.Cache()
+
 	app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
 		key := e.Key()
 		switch key {

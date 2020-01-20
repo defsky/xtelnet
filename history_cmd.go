@@ -1,21 +1,22 @@
 package main
 
 import (
+	"bufio"
 	"container/list"
+	"os"
 	"strings"
 	"sync"
 
 	"github.com/gdamore/tcell"
 )
 
-const historyCmdLength = 1000
+const cacheFileName = ".history"
 
 type HistoryCmd struct {
 	mu               sync.Mutex
 	scrolling        bool
 	maxLen           int
 	currentInputText string
-	lastInputText    string
 	history          *list.List
 	matchs           *list.List
 	currentMatch     *list.Element
@@ -36,6 +37,9 @@ func (l *HistoryCmd) SetScrolling(b bool) {
 	l.scrolling = b
 }
 func (l *HistoryCmd) SetCurrentText(text string) {
+	if len(strings.Trim(text, " ")) <= 0 {
+		text = ""
+	}
 	l.currentInputText = text
 }
 
@@ -62,32 +66,39 @@ func (l *HistoryCmd) NextMatch(key tcell.Key) string {
 }
 
 func (l *HistoryCmd) Match() {
+	defer func() {
+		l.currentMatch = l.matchs.Front()
+		l.mu.Unlock()
+	}()
+
 	l.mu.Lock()
-	defer l.mu.Unlock()
 
 	l.matchs.Init()
 	l.currentMatch = nil
-	l.lastInputText = l.currentInputText
+
 	if l.currentInputText == "" {
 		l.matchs.PushBackList(l.history)
-		l.matchs.PushFront("")
-		l.currentMatch = l.matchs.Front()
+		l.matchs.PushFront(" ")
 		return
 	}
 
-	l.history.PushFront(l.currentInputText)
 	for e := l.history.Front(); e != nil; e = e.Next() {
 		s := e.Value.(string)
+		if s == l.currentInputText {
+			continue
+		}
 		if strings.HasPrefix(strings.ToLower(s), strings.ToLower(l.currentInputText)) {
 			l.matchs.PushBack(e.Value)
 		}
 	}
-
-	l.currentMatch = l.matchs.Front()
+	if l.matchs.Len() > 0 {
+		l.matchs.PushFront(l.currentInputText)
+	}
 }
 
 // Add text into history record
 func (l *HistoryCmd) Add(text string) {
+	text = strings.TrimRight(text, " ")
 	if len(text) <= 0 {
 		return
 	}
@@ -107,4 +118,32 @@ func (l *HistoryCmd) Add(text string) {
 		l.history.Remove(l.history.Back())
 	}
 	l.history.PushFront(text)
+}
+
+func (l *HistoryCmd) Cache() {
+	fd, err := os.Create(cacheFileName)
+	if err != nil {
+		return
+	}
+	defer fd.Close()
+
+	for e := l.history.Back(); e != nil; e = e.Prev() {
+		fd.WriteString(e.Value.(string) + "\n")
+	}
+}
+
+func (l *HistoryCmd) LoadCache() {
+	fd, err := os.Open(cacheFileName)
+	if err != nil {
+		return
+	}
+	defer fd.Close()
+
+	rd := bufio.NewReader(fd)
+	for line, err := rd.ReadString('\n'); err == nil; {
+		line = strings.Trim(line, "\n ")
+		l.history.PushFront(line)
+
+		line, err = rd.ReadString('\n')
+	}
 }
