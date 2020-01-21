@@ -48,6 +48,9 @@ func init() {
 		}
 		return x, y, width, height
 	})
+	screen.Focus(func(p tview.Primitive) {
+		//screen.SetScrollable(true)
+	})
 
 	statusBar.SetBackgroundColor(tcell.ColorDarkGray)
 
