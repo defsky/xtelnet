@@ -12,8 +12,8 @@ go:
 # services:
 #   - rabbitmq
 
-# env:
-#   - GO111MODULE=on AMQP_URL=amqp://guest:guest@127.0.0.1:5672/
+env:
+  - GO111MODULE=on
 
 # before_install:
 #   - go get -v golang.org/x/lint/golint
