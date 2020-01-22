@@ -10,6 +10,9 @@ import (
 // gui app
 var app = tview.NewApplication()
 
+var widgets = []tview.Primitive{screen, inputBox}
+var currentWidget = 1
+
 func main() {
 	defer historyCmd.Cache()
 
@@ -27,6 +30,11 @@ func main() {
 			if sess := UserShell.GetSession(); sess != nil {
 				sess.Close()
 			}
+
+		case tcell.KeyTab:
+			currentWidget = (currentWidget + 1) % len(widgets)
+			p := widgets[currentWidget]
+			app.SetFocus(p)
 		}
 		return e
 	})

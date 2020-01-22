@@ -39,7 +39,7 @@ var historyCmd = NewHistoryCmd(historyCmdLength)
 func init() {
 	historyCmd.LoadCache()
 
-	screen.SetText("[green::b]Welcome to xtelnet!\n\n[yellow::b]Type /<Enter> for help\n\n")
+	screen.SetText("[green]Welcome to xtelnet!\n\n[yellow]Type /<Enter> for help\n\n[-]")
 	screen.SetDrawFunc(func(scr tcell.Screen, x int, y int, width int, height int) (int, int, int, int) {
 		if width < 110 {
 			screen.SetWrap(false)
