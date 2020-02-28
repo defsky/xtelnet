@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"xtelnet/session"
@@ -84,6 +85,8 @@ func (ui *XUI) Attach(name string) {
 	conn, err := net.DialUnix("unix", nil, sessionAddr)
 	if err != nil {
 		fmt.Println(err)
+		os.Remove(fpath)
+
 		return
 	}
 	defer conn.Close()
@@ -134,7 +137,6 @@ func (ui *XUI) receiver(conn *net.UnixConn) {
 }
 
 func (ui *XUI) run() error {
-
 	if err := app.SetRoot(layout, true).Run(); err != nil {
 		panic(err)
 	}

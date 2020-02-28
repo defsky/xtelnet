@@ -12,9 +12,13 @@ import (
 
 const baseDir string = "/var/run/xtelnet"
 
-var nvt = telnet.NewNVT()
 var outCh = make(chan []byte, 100)
 var closeCh = make(chan struct{})
+
+var nvt *telnet.NVT
+var nvtConfig = &telnet.SessionOption{
+	NVTOptionCfg: telnet.NewNVTOptionConfig(),
+}
 
 func Create(name string, fname string) {
 	shell := NewShell()
@@ -41,51 +45,55 @@ func Create(name string, fname string) {
 	l.SetUnlinkOnClose(true)
 
 	//os.Chmod(fname, os.ModeSocket|os.FileMode(0600))
+	go func() {
+		<-closeCh
+		l.Close()
+	}()
 
 DONE:
 	for {
 		select {
 		case <-closeCh:
-			term.Stop()
 			break DONE
 		default:
 			conn, err := l.AcceptUnix()
 			if err != nil {
-				conn.Close()
-				continue
+				break
 			}
-
 			go handleIncoming(conn, term)
 		}
 	}
-	close(outCh)
 }
 
 func handleIncoming(conn *net.UnixConn, term *Terminal) {
-
 	err := sendBufferedMessage(conn, term)
 	if err != nil {
 		return
 	}
 	term.SetConn(conn)
+	defer term.SetConn(nil)
 
 	r := bufio.NewReader(conn)
+DONE:
 	for {
-		b, err := r.ReadBytes('\n')
-		if err != nil {
-			term.SetConn(nil)
-			break
+		select {
+		case <-closeCh:
+			break DONE
+		default:
+			b, err := r.ReadBytes('\n')
+			if err != nil {
+				break DONE
+			}
+			term.Input(b)
 		}
-		term.Input(b)
 	}
 }
 
 func sendBufferedMessage(conn *net.UnixConn, term *Terminal) error {
-	lines := term.GetBufferdLines(40)
+	lines := term.GetBufferdLines(25)
+
 	w := bufio.NewWriter(conn)
-
 	if lines != nil && len(lines) > 0 {
-
 		for _, l := range lines {
 			if len(l) > 0 {
 				_, err := w.Write(l)

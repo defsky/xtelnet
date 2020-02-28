@@ -26,13 +26,13 @@ type TickTaskMap map[time.Duration][]ScheduleTask
 
 // Terminal is the interface wraps basic methods for terminal
 type Terminal struct {
-	wg      sync.WaitGroup
-	history *HistoryCmd
-	shell   *Shell
-
+	wg         sync.WaitGroup
+	history    *HistoryCmd
+	shell      *Shell
 	conn       *net.UnixConn
-	buffer     [][]byte
+	buffer     *OutBuffer
 	netWriter  *bufio.Writer
+	close      chan struct{}
 	closeTimer chan struct{}
 }
 
@@ -40,7 +40,8 @@ func NewTerminal(s *Shell) *Terminal {
 	return &Terminal{
 		history:    NewHistoryCmd(historyCmdLength),
 		shell:      s,
-		buffer:     make([][]byte, 0, 100),
+		buffer:     NewBuffer(500),
+		close:      make(chan struct{}),
 		closeTimer: make(chan struct{}),
 	}
 }
@@ -51,30 +52,35 @@ func (t *Terminal) Start() {
 	outCh <- []byte("[green]Welcome to xtelnet!\n\n")
 	outCh <- []byte("[yellow]Type /<Enter> for help\n[-]")
 }
+
 func (t *Terminal) Stop() {
-	nvt.Close()
-	t.conn.Close()
+	close(t.close)
+
+	if nvt != nil {
+		nvt.Close()
+	}
+
+	if t.conn != nil {
+		t.conn.Close()
+	}
 }
+
 func (t *Terminal) terminal() {
 DONE:
 	for {
 		select {
+		case <-t.close:
+			break DONE
 		case msg, ok := <-outCh:
 			if !ok {
 				break DONE
 			}
-			t.buffer = append(t.buffer, msg)
 
-			if len(t.buffer) > 10000 {
-				t.buffer = t.buffer[1:]
-			}
+			t.buffer.Put(msg)
+
 			if t.netWriter != nil {
 				t.netWriter.Write(msg)
-				err := t.netWriter.Flush()
-				if err != nil {
-					t.Stop()
-					break DONE
-				}
+				t.netWriter.Flush()
 			}
 		}
 	}
@@ -85,19 +91,7 @@ func (t *Terminal) GetBufferdLines(count int) [][]byte {
 		return nil
 	}
 
-	size := len(t.buffer)
-
-	retSize := size
-	startIdx := 0
-	if size > count {
-		startIdx = size - count
-		retSize = count
-	}
-
-	ret := make([][]byte, retSize)
-	copy(ret, t.buffer[startIdx:])
-
-	return ret
+	return t.buffer.Get(count)
 }
 func (t *Terminal) SetConn(c *net.UnixConn) {
 	if c != nil {
@@ -105,18 +99,20 @@ func (t *Terminal) SetConn(c *net.UnixConn) {
 		t.netWriter = bufio.NewWriter(c)
 	} else {
 		t.netWriter = nil
+		t.conn.Close()
+		t.conn = nil
 	}
 }
 
 func (t *Terminal) Input(cmd []byte) {
 	msg, data, err := t.shell.Exec(strings.TrimRight(string(cmd), "\r\n"))
 	if len(msg) > 0 {
-		outCh <- []byte(msg)
+		outCh <- []byte(msg + "\n")
 	}
 	if err != nil {
-		outCh <- []byte(err.Error())
+		outCh <- []byte(err.Error() + "\n")
 	}
-	if len(data) > 0 && false == nvt.Send(data) {
+	if len(data) > 0 && nvt != nil && false == nvt.Send(data) {
 		outCh <- []byte("no active conncetion\n")
 	}
 }

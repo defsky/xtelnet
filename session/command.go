@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"xtelnet/telnet"
 )
 
 // CommandHandler handle command
@@ -112,14 +113,14 @@ var commands = CommandMap{
 
 func handleCmdQuit(c *Command, p *bufio.Reader) (string, []byte, error) {
 	// app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
-	nvt.Close()
+
 	close(closeCh)
 
 	return "", nil, nil
 }
 func handleCmdSetGA(c *Command, p *bufio.Reader) (string, []byte, error) {
-	gaVisible := !nvt.Option.GAVisible
-	nvt.Option.GAVisible = gaVisible
+	gaVisible := !nvtConfig.GAVisible
+	nvtConfig.GAVisible = gaVisible
 	if gaVisible {
 		return "GA visible on", nil, nil
 	} else {
@@ -129,8 +130,8 @@ func handleCmdSetGA(c *Command, p *bufio.Reader) (string, []byte, error) {
 
 func handleCmdDebugIAC(c *Command, p *bufio.Reader) (string, []byte, error) {
 
-	iacDebug := !nvt.Option.DebugIAC
-	nvt.Option.DebugIAC = iacDebug
+	iacDebug := !nvtConfig.DebugIAC
+	nvtConfig.DebugIAC = iacDebug
 	if iacDebug {
 		return "IAC debug opened", nil, nil
 	} else {
@@ -141,9 +142,9 @@ func handleCmdDebugIAC(c *Command, p *bufio.Reader) (string, []byte, error) {
 
 func handleCmdDebugColor(c *Command, p *bufio.Reader) (string, []byte, error) {
 
-	colorDebug := !nvt.Option.DebugColor
+	colorDebug := !nvtConfig.DebugColor
 	// screen.SetDynamicColors(!colorDebug)
-	nvt.Option.DebugColor = colorDebug
+	nvtConfig.DebugColor = colorDebug
 	if colorDebug {
 		return "Color debug opened", nil, nil
 	} else {
@@ -152,18 +153,21 @@ func handleCmdDebugColor(c *Command, p *bufio.Reader) (string, []byte, error) {
 
 }
 func handleCmdDebugAnsiColor(c *Command, p *bufio.Reader) (string, []byte, error) {
-	nvt.Option.DebugAnsiColor = !nvt.Option.DebugAnsiColor
+	nvtConfig.DebugAnsiColor = !nvtConfig.DebugAnsiColor
 
-	if nvt.Option.DebugAnsiColor {
+	if nvtConfig.DebugAnsiColor {
 		return "Ansi Color debug opened", nil, nil
 	} else {
 		return "Ansi Color debug closed", nil, nil
 	}
 }
 func handleCmdClose(c *Command, p *bufio.Reader) (string, []byte, error) {
-	nvt.Close()
 
-	return "", nil, nil
+	if nvt != nil {
+		nvt.Close()
+		return "", nil, nil
+	}
+	return "No active connection", nil, nil
 }
 
 func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
@@ -199,24 +203,11 @@ func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 		return "", nil, errors.New("port number must in range 1-65535")
 	}
 
-	out, err := nvt.Open(fmt.Sprintf("%s:%s", host, port))
-	if err != nil {
-		return "open connection failed", nil, err
-	}
 	go func() {
-	DONE:
-		for {
-			select {
-			case msg, ok := <-out:
-				if !ok {
-					break DONE
-				}
-				outCh <- msg
-			}
-		}
+		nvt = telnet.NewNVT(outCh, host, port, nvtConfig)
 	}()
 
-	return "connection established", nil, nil
+	return fmt.Sprintf("connecting to %s:%s ...", host, port), nil, nil
 }
 
 func (c *Command) Exec(p *bufio.Reader) (string, []byte, error) {

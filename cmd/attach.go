@@ -16,6 +16,7 @@ limitations under the License.
 package cmd
 
 import (
+	"os"
 	"xtelnet/xui"
 
 	"github.com/spf13/cobra"
@@ -27,7 +28,11 @@ var attachCmd = &cobra.Command{
 	Short: "attach to the specified session",
 	Long:  `attach to the specified session`,
 	Args:  cobra.ExactArgs(1),
+	PreRun: func(cmd *cobra.Command, args []string) {
+		os.Setenv("RUNEWIDTH_EASTASIAN", "1")
+	},
 	Run: func(cmd *cobra.Command, args []string) {
+
 		ui := xui.NewXUI()
 		ui.Attach(args[0])
 	},
@@ -45,4 +50,5 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// attachCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+
 }
