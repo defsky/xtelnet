@@ -1,9 +1,13 @@
-package main
+package shared
 
 import (
 	"container/list"
 	"sync"
 )
+
+type ScriptEngine interface {
+	Stop()
+}
 
 type Queue struct {
 	l *list.List

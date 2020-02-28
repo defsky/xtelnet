@@ -1,9 +1,9 @@
-package main
+package xui
 
 import (
-	"fmt"
 	"sort"
 	"strings"
+	"xtelnet/session"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"
@@ -34,12 +34,13 @@ var layout = tview.NewFlex().SetDirection(tview.FlexRow).
 
 const historyCmdLength = 1000
 
-var historyCmd = NewHistoryCmd(historyCmdLength)
+var historyCmd = session.NewHistoryCmd(historyCmdLength)
+var inputCh = make(chan []byte, 10)
 
 func init() {
 	historyCmd.LoadCache()
 
-	screen.SetText("[green]Welcome to xtelnet!\n\n[yellow]Type /<Enter> for help\n\n[-]")
+	// screen.SetText("[green]Welcome to xtelnet!\n\n[yellow]Type /<Enter> for help\n\n[-]")
 	screen.SetDrawFunc(func(scr tcell.Screen, x int, y int, width int, height int) (int, int, int, int) {
 		if width < 110 {
 			screen.SetWrap(false)
@@ -58,17 +59,8 @@ func init() {
 			cmdstr := inputBox.GetText()
 			inputBox.SetText("")
 			historyCmd.Add(cmdstr)
-			msg, err := UserShell.Exec(cmdstr)
-			if err != nil {
-				app.QueueUpdate(func() {
-					fmt.Fprintf(screen, "[red]%s\n", err)
-				})
-			}
-			if len(msg) > 0 {
-				app.QueueUpdate(func() {
-					fmt.Fprintf(screen, "%s\n", msg)
-				})
-			}
+
+			inputCh <- []byte(cmdstr)
 		case tcell.KeyEsc:
 			inputBox.SetText("")
 		case tcell.KeyTab, tcell.KeyBacktab:
@@ -76,8 +68,8 @@ func init() {
 	})
 
 	words := []string{}
-	for _, c := range rootCMD.subCommand {
-		words = append(words, c.name+" ")
+	for _, c := range session.GetRootCmd().GetCommandMap() {
+		words = append(words, c.Name()+" ")
 	}
 	sort.Strings(words)
 	inputBox.SetAutocompleteFunc(func(currentText string) (entries []string) {

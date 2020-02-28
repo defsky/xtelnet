@@ -1,9 +1,10 @@
-package main
+package session
 
 import (
 	"bufio"
 	"container/list"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -11,6 +12,7 @@ import (
 )
 
 const cacheFileName = ".history"
+const cacheDir = ".telnet/"
 
 type HistoryCmd struct {
 	mu               sync.Mutex
@@ -20,14 +22,21 @@ type HistoryCmd struct {
 	history          *list.List
 	matchs           *list.List
 	currentMatch     *list.Element
+	dbfile           string
 }
 
 func NewHistoryCmd(len int) *HistoryCmd {
 
+	homedir, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+
 	return &HistoryCmd{
-		maxLen:  historyCmdLength,
+		maxLen:  len,
 		history: list.New(),
 		matchs:  list.New(),
+		dbfile:  filepath.Join(homedir, cacheDir, cacheFileName),
 	}
 }
 func (l *HistoryCmd) IsScrolling() bool {
@@ -121,7 +130,8 @@ func (l *HistoryCmd) Add(text string) {
 }
 
 func (l *HistoryCmd) Cache() {
-	fd, err := os.Create(cacheFileName)
+
+	fd, err := os.Create(l.dbfile)
 	if err != nil {
 		return
 	}
@@ -133,7 +143,7 @@ func (l *HistoryCmd) Cache() {
 }
 
 func (l *HistoryCmd) LoadCache() {
-	fd, err := os.Open(cacheFileName)
+	fd, err := os.Open(l.dbfile)
 	if err != nil {
 		return
 	}
