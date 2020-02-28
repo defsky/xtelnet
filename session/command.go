@@ -1,14 +1,15 @@
-package main
+package session
 
 import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/gdamore/tcell"
 	"io"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/defsky/xtelnet/telnet"
 )
 
 // CommandHandler handle command
@@ -24,6 +25,14 @@ type Command struct {
 	subCommand CommandMap
 	desc       string
 	help       string
+}
+
+func (c *Command) Name() string {
+	return c.name
+}
+
+func (c *Command) GetCommandMap() CommandMap {
+	return c.subCommand
 }
 
 var rootCMD = &Command{
@@ -104,69 +113,62 @@ var commands = CommandMap{
 }
 
 func handleCmdQuit(c *Command, p *bufio.Reader) (string, []byte, error) {
-	app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
+	// app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
+
+	close(closeCh)
+
 	return "", nil, nil
 }
 func handleCmdSetGA(c *Command, p *bufio.Reader) (string, []byte, error) {
-	if sess := UserShell.GetSession(); sess != nil {
-
-		gaVisible := !sess.Option.GAVisible
-		sess.Option.GAVisible = gaVisible
-		if gaVisible {
-			return "GA visible on", nil, nil
-		} else {
-			return "GA visible off", nil, nil
-		}
+	gaVisible := !nvtConfig.GAVisible
+	nvtConfig.GAVisible = gaVisible
+	if gaVisible {
+		return "GA visible on", nil, nil
+	} else {
+		return "GA visible off", nil, nil
 	}
-	return "No active session", nil, nil
 }
 
 func handleCmdDebugIAC(c *Command, p *bufio.Reader) (string, []byte, error) {
-	if sess := UserShell.GetSession(); sess != nil {
 
-		iacDebug := !sess.Option.DebugIAC
-		sess.Option.DebugIAC = iacDebug
-		if iacDebug {
-			return "IAC debug opened", nil, nil
-		} else {
-			return "IAC debug closed", nil, nil
-		}
+	iacDebug := !nvtConfig.DebugIAC
+	nvtConfig.DebugIAC = iacDebug
+	if iacDebug {
+		return "IAC debug opened", nil, nil
+	} else {
+		return "IAC debug closed", nil, nil
 	}
-	return "No active session", nil, nil
+
 }
 
 func handleCmdDebugColor(c *Command, p *bufio.Reader) (string, []byte, error) {
-	if sess := UserShell.GetSession(); sess != nil {
 
-		colorDebug := !sess.Option.DebugColor
-		screen.SetDynamicColors(!colorDebug)
-		sess.Option.DebugColor = colorDebug
-		if colorDebug {
-			return "Color debug opened", nil, nil
-		} else {
-			return "Color debug closed", nil, nil
-		}
+	colorDebug := !nvtConfig.DebugColor
+	// screen.SetDynamicColors(!colorDebug)
+	nvtConfig.DebugColor = colorDebug
+	if colorDebug {
+		return "Color debug opened", nil, nil
+	} else {
+		return "Color debug closed", nil, nil
 	}
-	return "No active session", nil, nil
+
 }
 func handleCmdDebugAnsiColor(c *Command, p *bufio.Reader) (string, []byte, error) {
-	if sess := UserShell.GetSession(); sess != nil {
+	nvtConfig.DebugAnsiColor = !nvtConfig.DebugAnsiColor
 
-		sess.Option.DebugAnsiColor = !sess.Option.DebugAnsiColor
-
-		if sess.Option.DebugAnsiColor {
-			return "Ansi Color debug opened", nil, nil
-		} else {
-			return "Ansi Color debug closed", nil, nil
-		}
+	if nvtConfig.DebugAnsiColor {
+		return "Ansi Color debug opened", nil, nil
+	} else {
+		return "Ansi Color debug closed", nil, nil
 	}
-	return "No active session", nil, nil
 }
 func handleCmdClose(c *Command, p *bufio.Reader) (string, []byte, error) {
-	if sess := UserShell.GetSession(); sess != nil {
-		sess.Close()
+
+	if nvt != nil {
+		nvt.Close()
+		return "", nil, nil
 	}
-	return "No active session", nil, nil
+	return "No active connection", nil, nil
 }
 
 func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
@@ -202,17 +204,11 @@ func handleCmdOpen(c *Command, p *bufio.Reader) (string, []byte, error) {
 		return "", nil, errors.New("port number must in range 1-65535")
 	}
 
-	// open session to remote host
-	fmt.Fprintf(screen, "connecting to %s:%s ...\n", host, port)
-	sess, err := NewSession(fmt.Sprintf("%s:%s", host, port), screen)
-	if err != nil {
-		fmt.Fprintln(screen, err)
-		return "", nil, err
-	}
+	go func() {
+		nvt = telnet.NewNVT(outCh, host, port, nvtConfig)
+	}()
 
-	UserShell.SetSession(sess)
-
-	return "connection established", nil, nil
+	return fmt.Sprintf("connecting to %s:%s ...", host, port), nil, nil
 }
 
 func (c *Command) Exec(p *bufio.Reader) (string, []byte, error) {
@@ -250,13 +246,4 @@ func subCmdDesc(c *Command) string {
 	}
 	strings.TrimRight(msg, "\r\n ")
 	return msg
-}
-
-func doCommand(cmd string) (string, []byte, error) {
-	if len(cmd) <= 0 || cmd[0] != '/' {
-		return "", []byte(cmd + "\r\n"), nil
-	}
-	rd := bufio.NewReader(strings.NewReader(cmd[1:]))
-	rd.Peek(1)
-	return rootCMD.Exec(rd)
 }

@@ -9,7 +9,8 @@ eXtensible telnet client
 git clone https://github.com/defsky/xtelnet.git
 git submodule init
 git submodule update --recursive
-make run
+make build
+./xtelnet
 ```
 
 # Screenshot
