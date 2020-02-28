@@ -9,6 +9,8 @@ import (
 	"github.com/rivo/tview"
 )
 
+var app = tview.NewApplication()
+
 var screen = tview.NewTextView().
 	SetDynamicColors(true).SetScrollable(false).
 	SetChangedFunc(func() {
@@ -60,7 +62,7 @@ func init() {
 			inputBox.SetText("")
 			historyCmd.Add(cmdstr)
 
-			inputCh <- []byte(cmdstr)
+			inputCh <- []byte(cmdstr + "\n")
 		case tcell.KeyEsc:
 			inputBox.SetText("")
 		case tcell.KeyTab, tcell.KeyBacktab:
@@ -108,6 +110,15 @@ func init() {
 			}
 		}
 
+		return e
+	})
+
+	app.SetInputCapture(func(e *tcell.EventKey) *tcell.EventKey {
+		key := e.Key()
+		switch key {
+		case tcell.KeyCtrlC:
+			close(inputCh)
+		}
 		return e
 	})
 }

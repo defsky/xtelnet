@@ -13,8 +13,6 @@ import (
 	"github.com/rivo/tview"
 )
 
-var app = tview.NewApplication()
-
 // UI is the interface that wraps basic methods for user interface
 type UI interface {
 	io.Reader
@@ -92,7 +90,9 @@ func (ui *XUI) Attach(name string) {
 	ui.conn = conn
 
 	go ui.receiver(conn)
+	go ui.sender(conn)
 
+	ui.run()
 }
 
 func (ui *XUI) sender(conn *net.UnixConn) {
@@ -102,35 +102,42 @@ DONE:
 		select {
 		case cmd, ok := <-inputCh:
 			if !ok {
+				ui.conn.Close()
 				break DONE
 			}
-			w.Write(cmd)
-			w.Flush()
+			_, err := w.Write(cmd)
+			if err != nil {
+				fmt.Fprintln(screen, err)
+			}
+			err = w.Flush()
+			if err != nil {
+				fmt.Fprintln(screen, err)
+			}
 		}
 	}
 }
 
 func (ui *XUI) receiver(conn *net.UnixConn) {
+	ansiW := tview.ANSIWriter(screen)
+
 	r := bufio.NewReader(conn)
 	for {
 		b, err := r.ReadString('\n')
 		if err != nil {
 			break
 		}
-		fmt.Fprint(screen, b)
+
+		fmt.Fprint(ansiW, b)
 	}
+
+	app.Stop()
 }
 
-func (ui *XUI) run(name string) error {
+func (ui *XUI) run() error {
 
 	if err := app.SetRoot(layout, true).Run(); err != nil {
 		panic(err)
 	}
 
 	return nil
-}
-
-func defaultScreen(callback func()) (string, tview.Primitive) {
-
-	return "", nil
 }

@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,9 +29,8 @@ type Terminal struct {
 	wg      sync.WaitGroup
 	history *HistoryCmd
 	shell   *Shell
-	in      chan []byte
-	out     chan []byte
 
+	conn       *net.UnixConn
 	buffer     [][]byte
 	netWriter  *bufio.Writer
 	closeTimer chan struct{}
@@ -41,7 +41,6 @@ func NewTerminal(s *Shell) *Terminal {
 		history:    NewHistoryCmd(historyCmdLength),
 		shell:      s,
 		buffer:     make([][]byte, 0, 100),
-		out:        outCh,
 		closeTimer: make(chan struct{}),
 	}
 }
@@ -49,15 +48,18 @@ func NewTerminal(s *Shell) *Terminal {
 func (t *Terminal) Start() {
 	go t.terminal()
 
-	t.out <- []byte("[green]Welcome to xtelnet!\n\n")
-	t.out <- []byte("[yellow]Type /<Enter> for help\n[-]")
+	outCh <- []byte("[green]Welcome to xtelnet!\n\n")
+	outCh <- []byte("[yellow]Type /<Enter> for help\n[-]")
 }
-
+func (t *Terminal) Stop() {
+	nvt.Close()
+	t.conn.Close()
+}
 func (t *Terminal) terminal() {
 DONE:
 	for {
 		select {
-		case msg, ok := <-t.out:
+		case msg, ok := <-outCh:
 			if !ok {
 				break DONE
 			}
@@ -68,7 +70,11 @@ DONE:
 			}
 			if t.netWriter != nil {
 				t.netWriter.Write(msg)
-				t.netWriter.Flush()
+				err := t.netWriter.Flush()
+				if err != nil {
+					t.Stop()
+					break DONE
+				}
 			}
 		}
 	}
@@ -80,18 +86,22 @@ func (t *Terminal) GetBufferdLines(count int) [][]byte {
 	}
 
 	size := len(t.buffer)
-	ret := make([][]byte, 0, count)
 
+	retSize := size
 	startIdx := 0
 	if size > count {
 		startIdx = size - count
+		retSize = count
 	}
+
+	ret := make([][]byte, retSize)
 	copy(ret, t.buffer[startIdx:])
 
 	return ret
 }
 func (t *Terminal) SetConn(c *net.UnixConn) {
 	if c != nil {
+		t.conn = c
 		t.netWriter = bufio.NewWriter(c)
 	} else {
 		t.netWriter = nil
@@ -99,15 +109,15 @@ func (t *Terminal) SetConn(c *net.UnixConn) {
 }
 
 func (t *Terminal) Input(cmd []byte) {
-	msg, data, err := t.shell.Exec(string(cmd))
+	msg, data, err := t.shell.Exec(strings.TrimRight(string(cmd), "\r\n"))
 	if len(msg) > 0 {
-		t.out <- []byte(msg)
+		outCh <- []byte(msg)
 	}
 	if err != nil {
-		t.out <- []byte(err.Error())
+		outCh <- []byte(err.Error())
 	}
 	if len(data) > 0 && false == nvt.Send(data) {
-		t.out <- []byte("no active conncetion\n")
+		outCh <- []byte("no active conncetion\n")
 	}
 }
 

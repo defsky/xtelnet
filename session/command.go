@@ -112,6 +112,9 @@ var commands = CommandMap{
 
 func handleCmdQuit(c *Command, p *bufio.Reader) (string, []byte, error) {
 	// app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
+	nvt.Close()
+	close(closeCh)
+
 	return "", nil, nil
 }
 func handleCmdSetGA(c *Command, p *bufio.Reader) (string, []byte, error) {
