@@ -11,26 +11,21 @@ type Packet struct {
 }
 
 func (p *Packet) Size() int {
-	return len(p.cmd) + p.data.Len()
+	return 2 + p.data.Len()
 }
 
 func (p *Packet) HeadData() []byte {
 	len := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBytes, uint32(p.Size()))
+	binary.BigEndian.PutUint32(len, uint32(p.Size()))
 
 	return len
 }
 
 func Marshal(p *Packet) []byte {
-	b := bytes.NewBuffer()
-
 	cmd := make([]byte, 2)
 	binary.BigEndian.PutUint16(cmd, p.cmd)
-	b.Write(cmd)
 
-	b.Write(p.data.Bytes())
-
-	return b.Bytes()
+	return append(cmd, p.data.Bytes()...)
 }
 
 func Unmarshal(data []byte) *Packet {

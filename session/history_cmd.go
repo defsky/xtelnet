@@ -12,7 +12,7 @@ import (
 )
 
 const cacheFileName = ".history"
-const cacheDir = ".telnet/"
+const cacheDir = ".xtelnet/"
 
 type HistoryCmd struct {
 	mu               sync.Mutex

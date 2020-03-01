@@ -1,13 +1,14 @@
 package session
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"os"
 	"os/user"
 	"path/filepath"
 	"xtelnet/telnet"
+
+	"github.com/takama/daemon"
 )
 
 const baseDir string = "/var/run/xtelnet"
@@ -15,17 +16,20 @@ const baseDir string = "/var/run/xtelnet"
 var outCh = make(chan []byte, 100)
 var closeCh = make(chan struct{})
 
-var nvt *telnet.NVT
 var nvtConfig = &telnet.SessionOption{
 	NVTOptionCfg: telnet.NewNVTOptionConfig(),
 }
+var nvt *telnet.NVT
 
+func create(name string, fname string) {
+	s, err := daemon.New(name, name)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	s.Start()
+}
 func Create(name string, fname string) {
-	shell := NewShell()
-	term := NewTerminal(shell)
-
-	term.Start()
-
 	fname, err := socketFileName(name)
 	if err != nil {
 		return
@@ -40,81 +44,23 @@ func Create(name string, fname string) {
 		fmt.Println(err)
 		return
 	}
-	defer l.Close()
-
 	l.SetUnlinkOnClose(true)
 
-	//os.Chmod(fname, os.ModeSocket|os.FileMode(0600))
+	term := NewTerminal()
+	term.Start()
 	go func() {
 		<-closeCh
+		term.Stop()
 		l.Close()
 	}()
 
-DONE:
 	for {
-		select {
-		case <-closeCh:
-			break DONE
-		default:
-			conn, err := l.AcceptUnix()
-			if err != nil {
-				break
-			}
-			go handleIncoming(conn, term)
-		}
-	}
-}
-
-func handleIncoming(conn *net.UnixConn, term *Terminal) {
-	err := sendBufferedMessage(conn, term)
-	if err != nil {
-		return
-	}
-	term.SetConn(conn)
-	defer term.SetConn(nil)
-
-	r := bufio.NewReader(conn)
-DONE:
-	for {
-		select {
-		case <-closeCh:
-			break DONE
-		default:
-			b, err := r.ReadBytes('\n')
-			if err != nil {
-				break DONE
-			}
-			term.Input(b)
-		}
-	}
-}
-
-func sendBufferedMessage(conn *net.UnixConn, term *Terminal) error {
-	lines := term.GetBufferdLines(25)
-
-	w := bufio.NewWriter(conn)
-	if lines != nil && len(lines) > 0 {
-		for _, l := range lines {
-			if len(l) > 0 {
-				_, err := w.Write(l)
-				if err != nil {
-					return err
-				}
-			}
-		}
-	} else {
-		_, err := w.Write([]byte("No buffered message\n"))
+		conn, err := l.AcceptUnix()
 		if err != nil {
-			return err
+			break
 		}
-		w.Flush()
+		term.HandleIncoming(conn)
 	}
-
-	err := w.Flush()
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func mkdirIfNotExist(path string, mode os.FileMode) error {

@@ -36,10 +36,10 @@ type Terminal struct {
 	closeTimer chan struct{}
 }
 
-func NewTerminal(s *Shell) *Terminal {
+func NewTerminal() *Terminal {
 	return &Terminal{
 		history:    NewHistoryCmd(historyCmdLength),
-		shell:      s,
+		shell:      NewShell(),
 		buffer:     NewBuffer(500),
 		close:      make(chan struct{}),
 		closeTimer: make(chan struct{}),
@@ -54,15 +54,13 @@ func (t *Terminal) Start() {
 }
 
 func (t *Terminal) Stop() {
-	close(t.close)
-
 	if nvt != nil {
 		nvt.Close()
 	}
-
 	if t.conn != nil {
 		t.conn.Close()
 	}
+	close(t.close)
 }
 
 func (t *Terminal) terminal() {
@@ -78,9 +76,8 @@ DONE:
 
 			t.buffer.Put(msg)
 
-			if t.netWriter != nil {
-				t.netWriter.Write(msg)
-				t.netWriter.Flush()
+			if t.conn != nil {
+				t.conn.Write(msg)
 			}
 		}
 	}
@@ -94,13 +91,49 @@ func (t *Terminal) GetBufferdLines(count int) [][]byte {
 	return t.buffer.Get(count)
 }
 func (t *Terminal) SetConn(c *net.UnixConn) {
-	if c != nil {
-		t.conn = c
-		t.netWriter = bufio.NewWriter(c)
+	t.conn = c
+}
+func (t *Terminal) sendFirstScreenData(conn *net.UnixConn) error {
+	lines := t.GetBufferdLines(25)
+
+	if lines != nil && len(lines) > 0 {
+		for _, l := range lines {
+			if len(l) > 0 {
+				_, err := conn.Write(l)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	} else {
-		t.netWriter = nil
-		t.conn.Close()
+		_, err := conn.Write([]byte("No buffered message\n"))
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *Terminal) HandleIncoming(conn *net.UnixConn) {
+	defer conn.Close()
+
+	err := t.sendFirstScreenData(conn)
+	if err != nil {
+		return
+	}
+	t.conn = conn
+	defer func() {
 		t.conn = nil
+	}()
+
+	r := bufio.NewReader(conn)
+DONE:
+	for {
+		b, err := r.ReadBytes('\n')
+		if err != nil {
+			break DONE
+		}
+		t.Input(b)
 	}
 }
 
@@ -112,8 +145,10 @@ func (t *Terminal) Input(cmd []byte) {
 	if err != nil {
 		outCh <- []byte(err.Error() + "\n")
 	}
-	if len(data) > 0 && nvt != nil && false == nvt.Send(data) {
-		outCh <- []byte("no active conncetion\n")
+	if len(data) > 0 {
+		if nvt == nil || false == nvt.Send(data) {
+			outCh <- []byte("no active conncetion\n")
+		}
 	}
 }
 

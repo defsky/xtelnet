@@ -92,38 +92,38 @@ func (ui *XUI) Attach(name string) {
 	defer conn.Close()
 	ui.conn = conn
 
-	go ui.receiver(conn)
-	go ui.sender(conn)
+	go ui.receiver()
+	go ui.sender()
 
 	ui.run()
 }
 
-func (ui *XUI) sender(conn *net.UnixConn) {
-	w := bufio.NewWriter(conn)
+func (ui *XUI) sender() {
+	defer ui.conn.Close()
+
 DONE:
 	for {
 		select {
 		case cmd, ok := <-inputCh:
 			if !ok {
-				ui.conn.Close()
 				break DONE
 			}
-			_, err := w.Write(cmd)
+
+			_, err := ui.conn.Write(cmd)
 			if err != nil {
 				fmt.Fprintln(screen, err)
-			}
-			err = w.Flush()
-			if err != nil {
-				fmt.Fprintln(screen, err)
+				break DONE
 			}
 		}
 	}
 }
 
-func (ui *XUI) receiver(conn *net.UnixConn) {
+func (ui *XUI) receiver() {
+	defer ui.conn.Close()
+
 	ansiW := tview.ANSIWriter(screen)
 
-	r := bufio.NewReader(conn)
+	r := bufio.NewReader(ui.conn)
 	for {
 		b, err := r.ReadString('\n')
 		if err != nil {
@@ -134,6 +134,8 @@ func (ui *XUI) receiver(conn *net.UnixConn) {
 	}
 
 	app.Stop()
+	// close(inputCh)
+	// app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
 }
 
 func (ui *XUI) run() error {

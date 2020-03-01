@@ -16,7 +16,8 @@ limitations under the License.
 package cmd
 
 import (
-	"fmt"
+	"os"
+	"os/exec"
 	"syscall"
 	"xtelnet/session"
 
@@ -32,29 +33,81 @@ var newCmd = &cobra.Command{
 	Short: "create a new session",
 	Long:  `create a new xtelnet session`,
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("main start")
-
-		pid, _, err := syscall.Syscall(syscall.SYS_FORK, 0, 0, 0)
-		if err != 0 {
-			fmt.Printf("%v\n", err)
-			return
-		}
-
-		if pid == 0 {
-			// start child process
+	Run: func(c *cobra.Command, args []string) {
+		if os.Getppid() == 1 {
 			name := args[0]
 			session.Create(name, cmdFile)
-		} else {
-
-			if isDetached {
-				fmt.Println("start session in detached mode")
-			}
-
-			sessionName := fmt.Sprintf("%d.%s", pid, args[0])
-
-			fmt.Println("Session name: ", sessionName)
+			return
 		}
+		cmd := exec.Command(os.Args[0], os.Args[1:]...)
+		cmd.Env = os.Environ()
+		cmd.Stdin = nil
+		cmd.Stdout = nil
+		cmd.Stderr = nil
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+		err := cmd.Start()
+		if err == nil {
+			cmd.Process.Release()
+			os.Exit(0)
+		}
+
+		// pid, _, err := syscall.Syscall(syscall.SYS_FORK, 0, 0, 0)
+		// if err != 0 {
+		// 	fmt.Printf("%v\n", err)
+		// 	return
+		// }
+
+		// if pid == 0 {
+		// 	/*
+		// 		// start child process
+		// 		// Change the file mode mask
+		// 		// _ = syscall.Umask(0)
+
+		// 		// // create a new SID for the child process
+		// 		// s_ret, s_errno := syscall.Setsid()
+		// 		// if s_errno != nil {
+		// 		// 	log.Printf("Error: syscall.Setsid errno: %d", s_errno)
+		// 		// }
+		// 		// if s_ret < 0 {
+		// 		// 	return
+		// 		// }
+
+		// 		// if nochdir == 0 {
+		// 		// 	os.Chdir("/")
+		// 		// }
+
+		// 		// if noclose == 0 {
+		// 		// 	f, e := os.OpenFile("/dev/null", os.O_RDWR, 0)
+		// 		// 	if e == nil {
+		// 		// 		fd := f.Fd()
+		// 		// 		syscall.Dup2(int(fd), int(os.Stdin.Fd()))
+		// 		// 		syscall.Dup2(int(fd), int(os.Stdout.Fd()))
+		// 		// 		syscall.Dup2(int(fd), int(os.Stderr.Fd()))
+		// 		// 	}
+		// 		// }
+		// 	*/
+		// 	ret, err := syscall.Setsid()
+		// 	if err != nil || ret < 0 {
+		// 		// return fmt.Errorf("fail to call setsid")
+		// 		return
+		// 	}
+
+		// 	signal.Ignore(syscall.SIGHUP)
+		// 	syscall.Umask(0)
+
+		// 	name := args[0]
+		// 	session.Create(name, cmdFile)
+		// } else {
+
+		// 	if isDetached {
+		// 		fmt.Println("start session in detached mode")
+		// 	}
+
+		// 	sessionName := fmt.Sprintf("%d.%s", pid, args[0])
+
+		// 	fmt.Println("Session name: ", sessionName)
+		// }
 	},
 }
 
