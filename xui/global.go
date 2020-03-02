@@ -3,6 +3,7 @@ package xui
 import (
 	"sort"
 	"strings"
+
 	"github.com/defsky/xtelnet/session"
 
 	"github.com/gdamore/tcell"
@@ -42,6 +43,7 @@ var inputCh = make(chan []byte, 10)
 func init() {
 	historyCmd.LoadCache()
 
+	// screen.SetBackgroundColor(tcell.ColorDefault)
 	// screen.SetText("[green]Welcome to xtelnet!\n\n[yellow]Type /<Enter> for help\n\n[-]")
 	screen.SetDrawFunc(func(scr tcell.Screen, x int, y int, width int, height int) (int, int, int, int) {
 		if width < 110 {

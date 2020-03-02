@@ -23,6 +23,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var detachAnyOther bool
+
 // attachCmd represents the attach command
 var attachCmd = &cobra.Command{
 	Use:   "attach <session name>",
@@ -35,7 +37,7 @@ var attachCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 
 		ui := xui.NewXUI()
-		ui.Attach(args[0])
+		ui.Attach(args[0], detachAnyOther)
 	},
 }
 
@@ -51,5 +53,5 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// attachCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-
+	attachCmd.Flags().BoolVarP(&detachAnyOther, "detach", "d", false, "Detach any other attaching, and attach from here")
 }

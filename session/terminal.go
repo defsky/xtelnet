@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/defsky/xtelnet/proto"
 )
 
@@ -30,7 +31,7 @@ type Terminal struct {
 	wg         sync.WaitGroup
 	history    *HistoryCmd
 	shell      *Shell
-	conn       *net.UnixConn
+	conn       net.Conn
 	buffer     *OutBuffer
 	netWriter  *bufio.Writer
 	close      chan struct{}
@@ -51,7 +52,8 @@ func (t *Terminal) Start() {
 	go t.terminal()
 
 	outCh <- []byte("[green]Welcome to xtelnet!\n\n")
-	outCh <- []byte("[yellow]Type /<Enter> for help\n[-]")
+	outCh <- []byte("[green]Presss Ctrl-C to detach\n\n")
+	outCh <- []byte("[yellow]Type /<Enter> for help[-]\n\n")
 }
 
 func (t *Terminal) Stop() {
@@ -81,7 +83,7 @@ DONE:
 				p := &proto.Packet{}
 				p.Write(msg)
 
-				proto.Send(t.conn, p)
+				proto.WritePacket(t.conn, p)
 			}
 		}
 	}
@@ -97,7 +99,7 @@ func (t *Terminal) GetBufferdLines(count int) [][]byte {
 func (t *Terminal) SetConn(c *net.UnixConn) {
 	t.conn = c
 }
-func (t *Terminal) sendFirstScreenData(conn *net.UnixConn) error {
+func (t *Terminal) sendFirstScreenData(conn net.Conn) error {
 	p := &proto.Packet{}
 
 	lines := t.GetBufferdLines(25)
@@ -118,10 +120,63 @@ func (t *Terminal) sendFirstScreenData(conn *net.UnixConn) error {
 		}
 	}
 
-	return proto.Send(conn, p)
+	return proto.WritePacket(conn, p)
 }
 
-func (t *Terminal) HandleIncoming(conn *net.UnixConn) {
+func (t *Terminal) sendDetachStatus(c net.Conn) error {
+	p := &proto.Packet{}
+	p.Opcode = proto.SM_DETACH_STATUS
+
+	status := uint8(1)
+	if t.conn != nil {
+		status = uint8(0)
+	}
+	p.WriteByte(byte(status))
+	return proto.WritePacket(c, p)
+}
+
+func (t *Terminal) HandleIncoming(conn net.Conn) {
+	for {
+		p, err := proto.ReadPacket(conn)
+		if err != nil {
+			conn.Close()
+			return
+		}
+
+		switch p.Opcode {
+		case proto.CM_QUERY_DETACH_STATUS:
+			t.sendDetachStatus(conn)
+
+		case proto.CM_SCREEN_SIZE:
+
+		case proto.CM_ATTACH_REQ:
+			b, _ := p.ReadByte()
+			detach := false
+			if uint8(b) == 1 {
+				detach = true
+			}
+			retp := &proto.Packet{}
+			retp.Opcode = proto.SM_ATTACH_ACK
+
+			if t.conn != nil {
+				if detach {
+					t.conn.Close()
+				} else {
+					retp.WriteByte(byte(0))
+					retp.WriteString("already attached")
+					proto.WritePacket(conn, retp)
+					return
+				}
+			}
+			retp.WriteByte(byte(1))
+
+			proto.WritePacket(conn, retp)
+			t.handleAttaching(conn)
+		}
+	}
+}
+
+func (t *Terminal) handleAttaching(conn net.Conn) {
 	defer conn.Close()
 
 	err := t.sendFirstScreenData(conn)
@@ -133,14 +188,20 @@ func (t *Terminal) HandleIncoming(conn *net.UnixConn) {
 		t.conn = nil
 	}()
 
-	r := bufio.NewReader(conn)
+	// r := bufio.NewReader(conn)
 DONE:
 	for {
-		b, err := r.ReadBytes('\n')
+		// b, err := r.ReadBytes('\n')
+		p, err := proto.ReadPacket(conn)
 		if err != nil {
 			break DONE
 		}
-		t.Input(b)
+
+		switch p.Opcode {
+		case proto.CM_USER_INPUT:
+			b := p.Bytes()
+			t.Input(b)
+		}
 	}
 }
 

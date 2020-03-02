@@ -103,21 +103,31 @@ var commands = CommandMap{
 		desc:       "subcommands for setting",
 		help:       "\tUsage: /set",
 	},
-	"quit": &Command{
-		name:       "/quit",
-		handler:    handleCmdQuit,
+	"exit": &Command{
+		name:       "/exit",
+		handler:    handleCmdExit,
 		subCommand: nil,
-		desc:       "Quit this terminal, equivalent to Ctrl-c",
-		help:       "\tUsage: /quit",
+		desc:       "exit daemon of this session",
+		help:       "\tUsage: /exit",
+	},
+	"detach": &Command{
+		name:       "/detach",
+		handler:    handleCmdDetach,
+		subCommand: nil,
+		desc:       "Detach from this session, equivalent to Ctrl-c",
+		help:       "\tUsage: /detach",
 	},
 }
 
-func handleCmdQuit(c *Command, p *bufio.Reader) (string, []byte, error) {
-	// app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
-
+func handleCmdExit(c *Command, p *bufio.Reader) (string, []byte, error) {
 	close(closeCh)
 
 	return "", nil, nil
+}
+func handleCmdDetach(c *Command, p *bufio.Reader) (string, []byte, error) {
+	// app.QueueEvent(tcell.NewEventKey(tcell.KeyCtrlC, rune('c'), tcell.ModCtrl))
+
+	return "", nil, errors.New("\nPress CTRL-C to Detach\n")
 }
 func handleCmdSetGA(c *Command, p *bufio.Reader) (string, []byte, error) {
 	gaVisible := !nvtConfig.GAVisible

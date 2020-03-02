@@ -38,7 +38,8 @@ var newCmd = &cobra.Command{
 	Run: func(c *cobra.Command, args []string) {
 		sessionName := args[0]
 		if os.Getppid() == 1 {
-			session.Create(sessionName, cmdFile)
+			s := session.NewSession(sessionName, cmdFile)
+			s.Start()
 			return
 		}
 

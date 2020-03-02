@@ -17,7 +17,11 @@ package cmd
 
 import (
 	"fmt"
+	"net"
+	"os"
+	"path/filepath"
 
+	"github.com/defsky/xtelnet/proto"
 	"github.com/defsky/xtelnet/session"
 
 	"github.com/spf13/cobra"
@@ -42,12 +46,18 @@ var listCmd = &cobra.Command{
 		}
 
 		if len(sessions) > 0 {
+			count := 0
 			fmt.Println("There are sessions on:")
 			for _, v := range sessions {
-				fmt.Printf("  %s\n", v)
+				s := getSessionStatus(homedir, v)
+				if len(s) > 0 {
+					fmt.Printf("    %s\n", s)
+					count++
+				}
 			}
+			fmt.Printf(" %d Sockets in %s\n\n", count, homedir)
 		} else {
-			fmt.Println("There is no session")
+			fmt.Println("There is no session\n")
 		}
 	},
 }
@@ -64,4 +74,46 @@ func init() {
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// listCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+func getSessionStatus(d, s string) string {
+	fpath := filepath.Join(d, s)
+	addr, err := net.ResolveUnixAddr("unix", fpath)
+	if err != nil {
+		os.Remove(fpath)
+		return ""
+	}
+
+	conn, err := net.DialUnix("unix", nil, addr)
+	if err != nil {
+		os.Remove(fpath)
+		return ""
+	}
+	defer conn.Close()
+
+	p := &proto.Packet{}
+	p.Opcode = proto.CM_QUERY_DETACH_STATUS
+	err = proto.WritePacket(conn, p)
+	if err != nil {
+		os.Remove(fpath)
+		return ""
+	}
+	retp, err := proto.ReadPacket(conn)
+	if err != nil {
+		os.Remove(fpath)
+		return ""
+	}
+	switch retp.Opcode {
+	case proto.SM_DETACH_STATUS:
+		b, _ := retp.ReadByte()
+		if uint8(b) == 0 {
+			return fmt.Sprintf("%-20s  (%s)", s, "Attached")
+		}
+		if uint8(b) == 1 {
+			return fmt.Sprintf("%-20s  (%s)", s, "Detached")
+		}
+		return fmt.Sprintf("%-20s  (%s)", s, "Unknown ")
+	default:
+		return fmt.Sprintf("%-20s  (%s)", s, "Unknown ")
+	}
 }

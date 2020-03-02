@@ -23,8 +23,10 @@ type UI interface {
 
 // XUI is an extensible UI object
 type XUI struct {
-	conn    *net.UnixConn
-	widgets []tview.Primitive
+	conn        *net.UnixConn
+	widgets     []tview.Primitive
+	stopMsg     string
+	sessionName string
 }
 
 // Read data into p
@@ -42,16 +44,14 @@ func NewXUI() *XUI {
 	return &XUI{}
 }
 
-func (ui *XUI) Attach(name string) {
+func getSessionName(name string) (string, error) {
 	homedir, err := session.SocketHomeDir()
 	if err != nil {
-		fmt.Println(err)
-		return
+		return "", err
 	}
 	sessions, err := session.GetSessionList(homedir)
 	if err != nil {
-		fmt.Println(err)
-		return
+		return "", err
 	}
 
 	matchedSession := make([]string, 0)
@@ -65,33 +65,89 @@ func (ui *XUI) Attach(name string) {
 		}
 	}
 	if len(matchedSession) == 0 {
-		fmt.Printf("There is no matched session for name: %s\n", name)
-		return
+		return "", errors.New(fmt.Sprintf("There is no matched session for name: %s", name))
 	}
 	if len(matchedSession) > 1 {
-		fmt.Println("There are more than one session matched:")
+		msg := "There are more than one session matched:\n"
 		for _, s := range matchedSession {
-			fmt.Printf("  %s\n", s)
+			msg = msg + fmt.Sprintf("\t%s\n", s)
 		}
-		return
+		return "", errors.New(msg)
 	}
 
-	fpath := filepath.Join(homedir, matchedSession[0])
+	return matchedSession[0], nil
+}
+
+// Attach will attach to specified session
+//  name  : string, session name
+//  detach: bool, if detach other
+func (ui *XUI) Attach(name string, detach bool) {
+	defer func() {
+		if len(ui.stopMsg) > 0 {
+			fmt.Printf("  %s\n", ui.stopMsg)
+		}
+	}()
+
+	s, err := getSessionName(name)
+	if err != nil {
+		ui.stopMsg = fmt.Sprintf("%s", err.Error())
+		return
+	}
+	ui.sessionName = s
+	homedir, err := session.SocketHomeDir()
+	if err != nil {
+		ui.stopMsg = fmt.Sprintf("%s", err.Error())
+		return
+	}
+	fpath := filepath.Join(homedir, s)
 
 	sessionAddr, err := net.ResolveUnixAddr("unix", fpath)
 	if err != nil {
-		fmt.Println(err)
+		ui.stopMsg = fmt.Sprintf("%s", err.Error())
 		return
 	}
 
 	conn, err := net.DialUnix("unix", nil, sessionAddr)
 	if err != nil {
-		fmt.Println(err)
 		os.Remove(fpath)
-
+		ui.stopMsg = fmt.Sprintf("%s", err.Error())
 		return
 	}
 	defer conn.Close()
+
+	p := &proto.Packet{}
+	p.Opcode = proto.CM_ATTACH_REQ
+	if detach {
+		p.WriteByte(byte(1))
+	} else {
+		p.WriteByte(byte(0))
+	}
+	if err := proto.WritePacket(conn, p); err != nil {
+		ui.stopMsg = fmt.Sprintf("Attach error: %s", err.Error())
+		return
+	}
+	p2, err := proto.ReadPacket(conn)
+	if err != nil {
+		ui.stopMsg = fmt.Sprintf("Attach error: %s", err.Error())
+		return
+	}
+
+	switch p2.Opcode {
+	case proto.SM_ATTACH_ACK:
+		b, err := p2.ReadByte()
+		if err != nil {
+			ui.stopMsg = fmt.Sprintf("Attach error: %s", err.Error())
+			return
+		}
+		ret := uint8(b)
+		if ret != 1 {
+			ui.stopMsg = fmt.Sprintf("Attaching denied: %s", p2.String())
+			return
+		}
+	default:
+		ui.stopMsg = fmt.Sprintf("Attach error: %s", "unknown ack code")
+		return
+	}
 	ui.conn = conn
 
 	go ui.receiver()
@@ -110,8 +166,11 @@ DONE:
 			if !ok {
 				break DONE
 			}
-
-			_, err := ui.conn.Write(cmd)
+			p := &proto.Packet{}
+			p.Opcode = proto.CM_USER_INPUT
+			p.Write(cmd)
+			err := proto.WritePacket(ui.conn, p)
+			// _, err := ui.conn.Write(cmd)
 			if err != nil {
 				fmt.Fprintln(screen, err)
 				break DONE
@@ -126,6 +185,7 @@ func (ui *XUI) receiver() {
 	ansiW := tview.ANSIWriter(screen)
 
 	// r := bufio.NewReader(ui.conn)
+DONE:
 	for {
 		// b, err := r.ReadString('\n')
 		// if err != nil {
@@ -133,10 +193,31 @@ func (ui *XUI) receiver() {
 		// }
 		p, err := proto.ReadPacket(ui.conn)
 		if err != nil {
+			if err == proto.EInvalidPacket {
+				fmt.Fprintf(ansiW, "[red]%s\n[-]", err.Error())
+				continue
+			}
+			if err == io.EOF {
+				ui.stopMsg = fmt.Sprintf("Remotely detached from session: %s", ui.sessionName)
+			} else {
+				ui.stopMsg = fmt.Sprintf("Detached from session: %s", ui.sessionName)
+			}
 			break
 		}
 
-		fmt.Fprint(ansiW, p.String())
+		switch p.Opcode {
+		case proto.SM_DETACH_STATUS:
+			status, err := p.ReadByte()
+			if err == nil {
+				if uint8(status) == 0 {
+					ui.stopMsg = fmt.Sprintf("Session already attached: %s", ui.sessionName)
+					break DONE
+				}
+			}
+		default:
+			fmt.Fprint(ansiW, p.String())
+		}
+
 	}
 
 	app.Stop()

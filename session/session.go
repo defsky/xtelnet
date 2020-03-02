@@ -4,15 +4,12 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/user"
 	"path/filepath"
 
 	"github.com/defsky/xtelnet/telnet"
-
-	"github.com/takama/daemon"
 )
 
-const baseDir string = "/var/run/xtelnet"
+const socketRunDir string = "run"
 
 var outCh = make(chan []byte, 100)
 var closeCh = make(chan struct{})
@@ -22,46 +19,77 @@ var nvtConfig = &telnet.SessionOption{
 }
 var nvt *telnet.NVT
 
-func create(name string, fname string) {
-	s, err := daemon.New(name, name)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	s.Start()
+type Session struct {
+	name  string
+	term  *Terminal
+	ln    net.Listener
+	fd    *os.File
+	fname string
 }
-func Create(name string, fname string) {
-	fname, err := socketFileName(name)
+
+func NewSession(name, fname string) *Session {
+	return &Session{
+		name: name,
+		term: NewTerminal(),
+	}
+}
+func (s *Session) Start() {
+	s.term.Start()
+
+	fname, err := socketFileName(s.name)
 	if err != nil {
 		return
 	}
-
-	unixAddr, err := net.ResolveUnixAddr("unix", fname)
+	s.fname = fname
+	addr, err := net.ResolveUnixAddr("unix", fname)
 	if err != nil {
-		fmt.Println(err)
-	}
-	l, err := net.ListenUnix("unix", unixAddr)
-	if err != nil {
-		fmt.Println(err)
 		return
 	}
-	l.SetUnlinkOnClose(true)
-
-	term := NewTerminal()
-	term.Start()
-	go func() {
-		<-closeCh
-		term.Stop()
-		l.Close()
-	}()
-
-	for {
-		conn, err := l.AcceptUnix()
-		if err != nil {
-			break
-		}
-		term.HandleIncoming(conn)
+	l, err := net.ListenUnix("unix", addr)
+	if err != nil {
+		return
 	}
+	l.SetUnlinkOnClose(false)
+	fd, err := l.File()
+	if err != nil {
+		return
+	}
+	l.Close()
+
+	s.fd = fd
+
+	go s.listenUnixSocket()
+
+	<-closeCh
+	s.term.Stop()
+	if s.ln != nil {
+		s.ln.Close()
+	}
+	if s.fd != nil {
+		s.fd.Close()
+	}
+	if s.fname != "" {
+		os.Remove(s.fname)
+	}
+}
+
+func (s *Session) listenUnixSocket() {
+	l, err := net.FileListener(s.fd)
+	if err != nil {
+		// fmt.Println(err)
+		return
+	}
+	s.ln = l
+
+	conn, err := l.Accept()
+	if err != nil {
+		return
+	}
+	l.Close()
+
+	go s.listenUnixSocket()
+
+	s.term.HandleIncoming(conn)
 }
 
 func mkdirIfNotExist(path string, mode os.FileMode) error {
@@ -89,23 +117,34 @@ func socketFileName(name string) (string, error) {
 }
 
 func SocketHomeDir() (string, error) {
-	err := mkdirIfNotExist(baseDir, os.ModeDir|os.FileMode(0775))
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	baseDir := filepath.Join(userHome, cacheDir)
+	err = mkdirIfNotExist(baseDir, os.ModeDir|os.FileMode(0775))
 	if err != nil {
 		return "", err
 	}
 
-	currentUser, err := user.Current()
+	baseDir = filepath.Join(baseDir, socketRunDir)
+	err = mkdirIfNotExist(baseDir, os.ModeDir|os.FileMode(0775))
 	if err != nil {
 		return "", err
 	}
-	homedirName := fmt.Sprintf("S-%s", currentUser.Username)
-	dirname := filepath.Join(baseDir, homedirName)
 
-	err = mkdirIfNotExist(dirname, os.ModeDir|os.FileMode(0700))
-	if err != nil {
-		return "", err
-	}
-	return dirname, nil
+	// currentUser, err := user.Current()
+	// if err != nil {
+	// 	return "", err
+	// }
+	// homedirName := fmt.Sprintf("S-%s", currentUser.Username)
+	// dirname := filepath.Join(baseDir, homedirName)
+
+	// err = mkdirIfNotExist(dirname, os.ModeDir|os.FileMode(0700))
+	// if err != nil {
+	// 	return "", err
+	// }
+	return baseDir, nil
 }
 
 func GetSessionList(dir string) ([]string, error) {
