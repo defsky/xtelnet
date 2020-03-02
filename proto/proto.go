@@ -3,37 +3,72 @@ package proto
 import (
 	"bytes"
 	"encoding/binary"
+	"net"
+)
+
+const (
+	headSize   = 4
+	opcodeSize = 2
 )
 
 type Packet struct {
-	cmd  uint16
-	data bytes.Buffer
+	Opcode uint16
+	bytes.Buffer
 }
 
 func (p *Packet) Size() int {
-	return 2 + p.data.Len()
+	return 2 + p.Len()
 }
 
 func (p *Packet) HeadData() []byte {
-	len := make([]byte, 4)
+	len := make([]byte, headSize)
 	binary.BigEndian.PutUint32(len, uint32(p.Size()))
 
 	return len
 }
 
 func Marshal(p *Packet) []byte {
-	cmd := make([]byte, 2)
-	binary.BigEndian.PutUint16(cmd, p.cmd)
+	b := make([]byte, opcodeSize)
+	binary.BigEndian.PutUint16(b, p.Opcode)
 
-	return append(cmd, p.data.Bytes()...)
+	return append(b, p.Bytes()...)
 }
 
 func Unmarshal(data []byte) *Packet {
 	p := &Packet{}
 
-	cmd := data[0:2]
-	p.cmd = binary.BigEndian.Uint16(cmd)
-	p.data.Write(data[2:])
+	cmd := data[0:opcodeSize]
+	p.Opcode = binary.BigEndian.Uint16(cmd)
+
+	p.Write(data[opcodeSize:])
 
 	return p
+}
+
+func Send(c *net.UnixConn, p *Packet) error {
+	b := p.HeadData()
+
+	data := Marshal(p)
+	b = append(b, data...)
+
+	_, err := c.Write(b)
+
+	return err
+}
+
+func ReadPacket(c *net.UnixConn) (*Packet, error) {
+	head := make([]byte, 4)
+	_, err := c.Read(head)
+	if err != nil {
+		return nil, err
+	}
+	dataLen := binary.BigEndian.Uint32(head)
+	data := make([]byte, dataLen)
+
+	_, err = c.Read(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return Unmarshal(data), nil
 }

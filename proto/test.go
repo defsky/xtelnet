@@ -3,22 +3,20 @@ package proto
 import (
 	"io"
 	"os"
-	"os/exec"
-	"syscall"
 )
 
 func Daemon(cmdstr string) {
-	cmd := exec.Command(cmdstr)
-	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	// cmd := exec.Command(cmdstr)
+	// cmd.Stdin = nil
+	// cmd.Stdout = nil
+	// cmd.Stderr = nil
+	// cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
-	err := cmd.Start()
-	if err == nil {
-		cmd.Process.Release()
-		os.Exit(0)
-	}
+	// err := cmd.Start()
+	// if err == nil {
+	// 	cmd.Process.Release()
+	// 	os.Exit(0)
+	// }
 }
 
 func daemonize(cmd string, args []string, pipe io.WriteCloser) error {

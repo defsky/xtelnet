@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"xtelnet/proto"
 )
 
 type TaskType int
@@ -77,7 +78,10 @@ DONE:
 			t.buffer.Put(msg)
 
 			if t.conn != nil {
-				t.conn.Write(msg)
+				p := &proto.Packet{}
+				p.Write(msg)
+
+				proto.Send(t.conn, p)
 			}
 		}
 	}
@@ -94,24 +98,27 @@ func (t *Terminal) SetConn(c *net.UnixConn) {
 	t.conn = c
 }
 func (t *Terminal) sendFirstScreenData(conn *net.UnixConn) error {
-	lines := t.GetBufferdLines(25)
+	p := &proto.Packet{}
 
+	lines := t.GetBufferdLines(25)
 	if lines != nil && len(lines) > 0 {
 		for _, l := range lines {
 			if len(l) > 0 {
-				_, err := conn.Write(l)
+				_, err := p.Write(l)
 				if err != nil {
-					return err
+					p.WriteString(err.Error())
+					break
 				}
 			}
 		}
 	} else {
-		_, err := conn.Write([]byte("No buffered message\n"))
+		_, err := p.WriteString("No buffered message\n")
 		if err != nil {
-			return err
+			p.WriteString(err.Error())
 		}
 	}
-	return nil
+
+	return proto.Send(conn, p)
 }
 
 func (t *Terminal) HandleIncoming(conn *net.UnixConn) {

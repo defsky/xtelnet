@@ -1,7 +1,6 @@
 package xui
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"xtelnet/proto"
 	"xtelnet/session"
 
 	"github.com/rivo/tview"
@@ -123,14 +123,18 @@ func (ui *XUI) receiver() {
 
 	ansiW := tview.ANSIWriter(screen)
 
-	r := bufio.NewReader(ui.conn)
+	// r := bufio.NewReader(ui.conn)
 	for {
-		b, err := r.ReadString('\n')
+		// b, err := r.ReadString('\n')
+		// if err != nil {
+		// 	break
+		// }
+		p, err := proto.ReadPacket(ui.conn)
 		if err != nil {
 			break
 		}
 
-		fmt.Fprint(ansiW, b)
+		fmt.Fprint(ansiW, p.String())
 	}
 
 	app.Stop()
