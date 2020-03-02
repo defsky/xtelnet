@@ -3,7 +3,7 @@ package xui
 import (
 	"sort"
 	"strings"
-	"xtelnet/session"
+	"github.com/defsky/xtelnet/session"
 
 	"github.com/gdamore/tcell"
 	"github.com/rivo/tview"

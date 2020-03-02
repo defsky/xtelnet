@@ -3,6 +3,7 @@ module xtelnet
 go 1.13
 
 require (
+	github.com/defsky/xtelnet v0.0.0-00010101000000-000000000000
 	github.com/gdamore/tcell v1.3.0
 	github.com/rivo/tview v0.0.0-20191231100700-c6236f442139
 	github.com/spf13/cobra v0.0.5
@@ -12,3 +13,5 @@ require (
 )
 
 replace github.com/rivo/tview => ./tview
+
+replace github.com/defsky/xtelnet => ./

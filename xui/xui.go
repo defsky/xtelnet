@@ -8,8 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"xtelnet/proto"
-	"xtelnet/session"
+
+	"github.com/defsky/xtelnet/proto"
+	"github.com/defsky/xtelnet/session"
 
 	"github.com/rivo/tview"
 )
@@ -57,6 +58,7 @@ func (ui *XUI) Attach(name string) {
 	for _, s := range sessions {
 		if strings.HasSuffix(s, name) {
 			matchedSession = append(matchedSession, s)
+			continue
 		}
 		if strings.HasPrefix(s, name) {
 			matchedSession = append(matchedSession, s)

@@ -18,7 +18,7 @@ package cmd
 import (
 	"os"
 
-	"xtelnet/xui"
+	"github.com/defsky/xtelnet/xui"
 
 	"github.com/spf13/cobra"
 )

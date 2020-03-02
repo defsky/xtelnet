@@ -8,7 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"xtelnet/telnet"
+
+	"github.com/defsky/xtelnet/telnet"
 )
 
 // CommandHandler handle command

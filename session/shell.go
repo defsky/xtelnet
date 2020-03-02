@@ -3,7 +3,8 @@ package session
 import (
 	"bufio"
 	"strings"
-	"xtelnet/telnet"
+
+	"github.com/defsky/xtelnet/telnet"
 )
 
 type Shell struct {

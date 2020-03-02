@@ -16,10 +16,12 @@ limitations under the License.
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
-	"xtelnet/session"
+
+	"github.com/defsky/xtelnet/session"
 
 	"github.com/spf13/cobra"
 )
@@ -34,22 +36,44 @@ var newCmd = &cobra.Command{
 	Long:  `create a new xtelnet session`,
 	Args:  cobra.ExactArgs(1),
 	Run: func(c *cobra.Command, args []string) {
+		sessionName := args[0]
 		if os.Getppid() == 1 {
-			name := args[0]
-			session.Create(name, cmdFile)
+			session.Create(sessionName, cmdFile)
 			return
 		}
+
 		cmd := exec.Command(os.Args[0], os.Args[1:]...)
 		cmd.Env = os.Environ()
 		cmd.Stdin = nil
 		cmd.Stdout = nil
 		cmd.Stderr = nil
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Setsid: true,
+		}
 
 		err := cmd.Start()
 		if err == nil {
+
+			fullSessionName := fmt.Sprintf("%d.%s", cmd.Process.Pid, sessionName)
+			fmt.Printf("  %s	[Detached]\n", fullSessionName)
+
 			cmd.Process.Release()
 			os.Exit(0)
+
+			// if isDetached {
+			// 	fmt.Printf("  %s	[Detached]\n", fullSessionName)
+			// 	os.Exit(0)
+			// } else {
+			// 	// xui.NewXUI().Attach(fullSessionName)
+			// 	time.Sleep(time.Second)
+			// 	cmd := exec.Command(os.Args[0], []string{"attach", fullSessionName}...)
+			// 	cmd.Env = append(os.Environ(), "RUNEWIDTH_EASTASIAN=1")
+			// 	err := cmd.Run()
+			// 	if err != nil {
+			// 		fmt.Println(err)
+			// 		os.Exit(-1)
+			// 	}
+			// }
 		}
 
 		// pid, _, err := syscall.Syscall(syscall.SYS_FORK, 0, 0, 0)

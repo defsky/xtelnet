@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"xtelnet/proto"
+	"github.com/defsky/xtelnet/proto"
 )
 
 type TaskType int

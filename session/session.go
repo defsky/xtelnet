@@ -6,7 +6,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"xtelnet/telnet"
+
+	"github.com/defsky/xtelnet/telnet"
 
 	"github.com/takama/daemon"
 )

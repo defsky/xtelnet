@@ -15,8 +15,8 @@ limitations under the License.
 */
 package main
 
-import "xtelnet/cmd"
+import "github.com/defsky/xtelnet/cmd"
 
 func main() {
-  cmd.Execute()
+	cmd.Execute()
 }

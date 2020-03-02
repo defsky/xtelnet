@@ -17,7 +17,8 @@ package cmd
 
 import (
 	"fmt"
-	"xtelnet/session"
+
+	"github.com/defsky/xtelnet/session"
 
 	"github.com/spf13/cobra"
 )
